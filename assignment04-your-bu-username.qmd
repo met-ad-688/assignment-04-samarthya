@@ -1,0 +1,24 @@
+---
+title: Assignment 04
+author:
+  - name: Norah Jones
+    affiliations:
+      - id: bu
+        name: Boston University
+        city: Boston
+        state: MA
+number-sections: true
+date: '2024-11-21'
+date-modified: today
+date-format: long
+format:
+  html:
+    theme: cerulean
+    toc: true
+    toc-depth: 2
+
+execute:
+  echo: false
+  eval: false
+  freeze: auto
+---
