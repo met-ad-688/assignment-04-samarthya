@@ -68,7 +68,7 @@ This analysis aims to:
 
 ```{python}
 #| label: setup-environment
-#| echo: true
+#| echo: false
 #| output: true
 
 # Import required libraries
@@ -117,13 +117,12 @@ except Exception as e:
 
 ```{python}
 #| label: load-data
-#| echo: true
+#| echo: false
 #| output: true
 
 # Load the Lightcast job postings dataset
 data_path = "data/lightcast_job_postings.csv"
 
-print(" Loading dataset...")
 try:
     # Check if file exists
     if not os.path.exists(data_path):
@@ -766,6 +765,257 @@ All model training attempts failed. Please check the data and configuration.
     best_model_results = None
 ```
 
+## Predictions DataFrame
+
+```{python}
+#| label: predictions-dataframe
+#| echo: true
+#| output: true
+
+display(Markdown("""
+::: {.callout-note}
+## Creating Predictions DataFrame
+Storing predictions and actual values for each model
+:::
+"""))
+
+if successful_models:
+    try:
+        # Create a comprehensive DataFrame with predictions from all models
+        all_predictions_list = []
+        
+        for model_name, results in model_results.items():
+            if results is not None:
+                # Get predictions from the model
+                predictions_spark = results['predictions']
+                
+                # Select actual and predicted values
+                pred_df = predictions_spark.select('SALARY_AVG', 'prediction').toPandas()
+                
+                # Add model name column
+                pred_df['Model'] = model_name
+                
+                # Rename columns for clarity
+                pred_df = pred_df.rename(columns={
+                    'SALARY_AVG': 'Actual_Salary',
+                    'prediction': 'Predicted_Salary'
+                })
+                
+                # Calculate residuals and percentage error
+                pred_df['Residual'] = pred_df['Actual_Salary'] - pred_df['Predicted_Salary']
+                pred_df['Absolute_Error'] = pred_df['Residual'].abs()
+                pred_df['Percentage_Error'] = (pred_df['Residual'] / pred_df['Actual_Salary']) * 100
+                pred_df['Absolute_Percentage_Error'] = pred_df['Percentage_Error'].abs()
+                
+                all_predictions_list.append(pred_df)
+        
+        # Combine all predictions into one DataFrame
+        if all_predictions_list:
+            all_predictions_df = pd.concat(all_predictions_list, ignore_index=True)
+            
+            # Create summary statistics for each model
+            summary_stats = all_predictions_df.groupby('Model').agg({
+                'Actual_Salary': ['count', 'mean', 'std', 'min', 'max'],
+                'Predicted_Salary': ['mean', 'std', 'min', 'max'],
+                'Absolute_Error': ['mean', 'std'],
+                'Absolute_Percentage_Error': ['mean', 'median']
+            }).round(2)
+            
+            # Display sample of predictions DataFrame (first 10 rows from each model)
+            sample_predictions = all_predictions_df.groupby('Model').head(10)
+            
+            display(Markdown(f"""
+::: {{.callout-tip}}
+## ✅ Predictions DataFrame Created
+
+**Total Records:** {len(all_predictions_df):,} predictions across {len(all_predictions_list)} models
+
+### Sample Predictions (First 10 per Model)
+
+{sample_predictions.to_markdown(index=False, floatfmt='.2f')}
+
+### Summary Statistics by Model
+
+{summary_stats.to_markdown(floatfmt='.2f')}
+
+### DataFrame Columns
+
+- **Model:** Model name (Linear Regression, Polynomial Regression, Random Forest)
+- **Actual_Salary:** Ground truth salary values
+- **Predicted_Salary:** Model predictions
+- **Residual:** Actual - Predicted (positive means underprediction)
+- **Absolute_Error:** |Actual - Predicted|
+- **Percentage_Error:** (Residual / Actual) × 100
+- **Absolute_Percentage_Error:** |Percentage_Error|
+
+The complete predictions DataFrame is stored in `all_predictions_df` variable.
+:::
+"""))
+            
+            # Make the DataFrame available for later use
+            globals()['all_predictions_df'] = all_predictions_df
+            
+        else:
+            display(Markdown("""
+::: {.callout-warning}
+## ⚠️ No Predictions to Display
+No successful model predictions available.
+:::
+"""))
+            
+    except Exception as e:
+        display(Markdown(f"""
+::: {{.callout-warning}}
+## ❌ Error Creating Predictions DataFrame
+Error: {str(e)}
+:::
+"""))
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ⚠️ No Models Available
+Cannot create predictions DataFrame without trained models.
+:::
+"""))
+```
+
+## Model Selection Criteria: Log-Likelihood and BIC
+
+```{python}
+#| label: model-selection-criteria
+#| echo: true
+#| output: true
+
+display(Markdown("""
+::: {.callout-note}
+## 📈 Advanced Model Selection Metrics
+Calculating Log-Likelihood and Bayesian Information Criterion (BIC)
+:::
+"""))
+
+if successful_models:
+    import numpy as np
+    
+    # Calculate Log-Likelihood and BIC for each model
+    model_selection_metrics = []
+    
+    for model_name, results in model_results.items():
+        if results is not None:
+            try:
+                predictions = results['predictions']
+                
+                # Get actual and predicted values
+                actuals_preds = predictions.select('SALARY_AVG', 'prediction').toPandas()
+                y_actual = actuals_preds['SALARY_AVG'].values
+                y_pred = actuals_preds['prediction'].values
+                
+                # Calculate residuals
+                residuals = y_actual - y_pred
+                
+                # Calculate RSS (Residual Sum of Squares)
+                rss = np.sum(residuals ** 2)
+                
+                # Number of observations
+                n = len(y_actual)
+                
+                # Estimate sigma^2 (variance of residuals)
+                sigma_squared = rss / n
+                
+                # Calculate Log-Likelihood (assuming normally distributed errors)
+                # LL = -n/2 * (log(2π) + log(σ²) + 1)
+                log_likelihood = -n/2 * (np.log(2 * np.pi) + np.log(sigma_squared) + 1)
+                
+                # Determine number of parameters (k)
+                if model_name == 'Linear Regression':
+                    # Number of features + intercept
+                    k = len(all_feature_cols) + 1
+                elif model_name == 'Polynomial Regression':
+                    # Number of polynomial features + intercept
+                    k = len(polynomial_feature_cols) + 1
+                elif model_name == 'Random Forest':
+                    # For Random Forest, k is more complex - use number of trees * max_depth as approximation
+                    # Or simply use the number of input features as a conservative estimate
+                    k = len(all_feature_cols) + 1
+                
+                # Calculate BIC = k*log(n) - 2*LL
+                bic = k * np.log(n) - 2 * log_likelihood
+                
+                # Calculate AIC as well (Akaike Information Criterion)
+                # AIC = 2k - 2*LL
+                aic = 2 * k - 2 * log_likelihood
+                
+                model_selection_metrics.append({
+                    'Model': model_name,
+                    'Log-Likelihood': log_likelihood,
+                    'Parameters (k)': k,
+                    'BIC': bic,
+                    'AIC': aic,
+                    'n': n
+                })
+                
+            except Exception as e:
+                print(f"Error calculating metrics for {model_name}: {str(e)}")
+    
+    if model_selection_metrics:
+        # Create comparison table
+        metrics_table_rows = []
+        for metric in model_selection_metrics:
+            metrics_table_rows.append(
+                f"| {metric['Model']} | {metric['Log-Likelihood']:,.2f} | "
+                f"{metric['Parameters (k)']} | {metric['BIC']:,.2f} | {metric['AIC']:,.2f} |"
+            )
+        
+        metrics_table = '\n'.join(metrics_table_rows)
+        
+        # Find best model by BIC (lower is better)
+        best_bic_model = min(model_selection_metrics, key=lambda x: x['BIC'])
+        best_aic_model = min(model_selection_metrics, key=lambda x: x['AIC'])
+        best_ll_model = max(model_selection_metrics, key=lambda x: x['Log-Likelihood'])
+        
+        display(Markdown(f"""
+::: {{.callout-tip}}
+## 📊 Model Selection Criteria Results
+
+| Model | Log-Likelihood | Parameters (k) | BIC | AIC |
+|-------|----------------|----------------|-----|-----|
+{metrics_table}
+
+### Key Insights
+
+- **Best by BIC (lower is better):** {best_bic_model['Model']} (BIC: {best_bic_model['BIC']:,.2f})
+- **Best by AIC (lower is better):** {best_aic_model['Model']} (AIC: {best_aic_model['AIC']:,.2f})
+- **Highest Log-Likelihood:** {best_ll_model['Model']} (LL: {best_ll_model['Log-Likelihood']:,.2f})
+
+### Understanding the Metrics
+
+- **Log-Likelihood (LL):** Measures how well the model fits the data (higher is better)
+- **BIC (Bayesian Information Criterion):** Penalizes model complexity more heavily than AIC (lower is better)
+- **AIC (Akaike Information Criterion):** Balances model fit and complexity (lower is better)
+- **Parameters (k):** Number of parameters in the model (including intercept)
+
+### Interpretation
+
+BIC tends to favor simpler models, especially with larger sample sizes (n={best_bic_model['n']:,}). 
+AIC may favor more complex models that fit the data better. The model with the lowest BIC/AIC 
+provides the best trade-off between fit and complexity.
+:::
+"""))
+    else:
+        display(Markdown("""
+::: {.callout-warning}
+## ⚠️ Could Not Calculate Model Selection Metrics
+Unable to compute Log-Likelihood and BIC for the models.
+:::
+"""))
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ⚠️ No Models Available
+Model selection criteria require successfully trained models.
+:::
+"""))
+```
+
 ## Feature Importance Analysis
 
 ```{python}
@@ -933,6 +1183,7 @@ Feature importance analysis requires successful Random Forest training
 ```{python}
 #| label: model-performance-viz
 #| echo: true
+#| code-fold: true
 #| output: true
 #| fig-width: 8
 #| fig-height: 12
@@ -1148,7 +1399,7 @@ Feature importance visualization requires Random Forest model with successful tr
 
 ```{python}
 #| label: prediction-analysis-viz
-#| echo: false
+#| echo: true
 #| output: true
 #| fig-width: 10
 #| fig-height: 16
@@ -1266,7 +1517,7 @@ Prediction analysis requires a successfully trained model.
 
 ```{python}
 #| label: summary-insights
-#| echo: false
+#| echo: true
 #| output: true
 
 # Create comprehensive summary
