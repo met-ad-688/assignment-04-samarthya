@@ -1,163 +1,71 @@
-# Assignment 04 - Salary Prediction with PySpark
+# Assignment 04 - Salary Prediction Analysis using PySpark
 
-## 📋 Project Overview
+## Project Overview
 
-This project implements a comprehensive salary prediction machine learning pipeline using PySpark and the Lightcast job postings dataset. The analysis compares three different regression models to predict job salaries based on various features.
+This project implements a machine learning pipeline using **PySpark** to predict job salaries from the Lightcast job postings dataset, demonstrating distributed data processing, feature engineering, and model comparison techniques.
 
-## 🎯 Objectives
+## Objectives
 
-- **Data Processing**: Use PySpark to process large-scale Lightcast dataset (11.9M rows, 131 columns)
-- **Feature Engineering**: Engineer features from structured columns for salary prediction
-- **Model Training**: Train and evaluate Linear Regression, Polynomial Regression, and Random Forest models
-- **Model Evaluation**: Assess models using RMSE, R², and MAE metrics
-- **Visualization**: Create diagnostic plots for model interpretation
+- **Data Processing**: Process large-scale job postings dataset using PySpark distributed computing
+- **Feature Engineering**: Create meaningful features from job characteristics using PySpark ML  
+- **Model Comparison**: Evaluate Linear Regression, Polynomial Regression, and Random Forest using PySpark MLlib
+- **Performance Analysis**: Assess model effectiveness using RMSE, R², and MAE metrics
 
-## 📊 Dataset
+## Dataset
 
-- **Source**: Lightcast job postings dataset
-- **Size**: 684MB, 11,992,060 rows × 131 columns
-- **Target Variable**: SALARY
-- **Features Selected**: 10 variables including 3 continuous, 2 categorical, and additional engineered features
+- **Source**: Lightcast job postings dataset (684MB, 131 columns)
+- **Valid Records**: ~32,000 salary records after cleaning
+- **Target Variable**: SALARY_AVG (engineered from salary ranges using PySpark)
 
-## 🔧 Technical Implementation
+## Methodology
 
-### Selected Features
+The analysis follows a PySpark-based approach:
 
-1. **Continuous Variables (3)**:
-   - MIN_YEARS_EXPERIENCE
-   - MAX_YEARS_EXPERIENCE  
-   - DURATION
+1. **PySpark Session Setup** - Initialize distributed computing environment
+2. **Data Loading and Quality Assessment** - Load large dataset into Spark DataFrame
+3. **Target Variable Engineering** - Create SALARY_AVG using PySpark SQL functions  
+4. **Feature Engineering** - Select and prepare features using PySpark ML transformers
+5. **Model Development** - Train regression models using PySpark MLlib
+6. **Performance Evaluation** - Compare models using PySpark ML evaluation metrics
 
-2. **Categorical Variables (2)**:
-   - EMPLOYMENT_TYPE_NAME
-   - REMOTE_TYPE_NAME
+## Model Performance
 
-3. **Additional Features (5)**:
-   - EDUCATION_LEVELS_NAME (categorical)
-   - STATE_NAME (categorical)
-   - IS_INTERNSHIP (binary)
-   - COMPANY_IS_STAFFING (binary)
-   - MIN_EDULEVELS (ordinal)
+**Best Performing Model**: Random Forest
+- **R² Score**: 0.3246 (explains 32.5% of salary variance)
+- **RMSE**: $37,888 (±33.1% of mean salary)
+- **MAE**: $29,238
 
-4. **Engineered Features**:
+## Key Findings
 
-   - MIN_YEARS_EXPERIENCE_SQ (polynomial feature)
+- **Experience Requirements**: Dominant factor (63% importance)
+- **Job Duration**: Secondary factor (11% importance)  
+- **Geographic Location**: Moderate impact (7% importance)
 
-### Data Preprocessing Pipeline
-
-- **StringIndexer**: Convert categorical variables to numerical indices
-- **OneHotEncoder**: Create binary vectors for categorical variables
-- **VectorAssembler**: Combine all features into feature vectors
-- **Data Split**: 80/20 train-test split with random seed 42
-
-### Models Implemented
-
-1. **Linear Regression**: Baseline interpretable model
-2. **Polynomial Linear Regression**: Enhanced with squared experience term
-3. **Random Forest Regressor**: Ensemble method (300 trees, max depth 6)
-
-## 📁 Project Structure
+## File Structure
 
 ```bash
 assignment-04-samarthya/
-├── salary_prediction_analysis.ipynb    # Main analysis notebook
-├── data/
-│   └── lightcast_job_postings.csv     # Dataset (684MB)
-├── output/                             # Output directory
-├── requirements.txt                    # Python dependencies
-├── README.md                          # Project documentation
-└── .gitignore                         # Git ignore file
+├── assignment04-samarthya.qmd      # Main analysis document
+├── assignment04-samarthya.ipynb    # Jupyter notebook version
+├── data/lightcast_job_postings.csv # Source dataset
+└── README.md                       # Project documentation
 ```
 
-## 🚀 Getting Started
+## Usage
 
-### Prerequisites
-- Python 3.8+
-- Java 8+ (for PySpark)
-- Virtual environment recommended
+1. **Quarto Document**: `quarto render assignment04-samarthya.qmd`
+2. **Jupyter Notebook**: Open `assignment04-samarthya.ipynb` for interactive analysis
 
-### Installation
+**Note**: Ensure Java and PySpark are properly configured before running the analysis.
 
-1. Clone the repository:
+## Dependencies
 
-   ```bash
-   git clone https://github.com/met-ad-688/assignment-04-samarthya.git
-   cd assignment-04-samarthya
-   ```
-
-2. Create and activate virtual environment:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Launch Jupyter:
-
-   ```bash
-   jupyter notebook salary_prediction_analysis.ipynb
-   ```
-
-## 🔍 Analysis Highlights
-
-### Feature Engineering
-
-- Created polynomial features to capture non-linear relationships
-- Implemented comprehensive preprocessing pipeline
-- Handled missing values and categorical encoding
-
-### Model Evaluation
-
-- Comprehensive comparison using multiple metrics
-- Statistical significance testing for linear models
-- Feature importance analysis for Random Forest
-- Diagnostic plots for residual analysis
-
-### Business Insights
-
-- Identification of key salary predictors
-- Feature importance for compensation strategy
-- Model recommendations for production deployment
-
-## 🛠️ Technologies Used
-
-- **PySpark 4.0.1**: Distributed data processing and machine learning
-- **Python**: Data analysis and visualization
-- **Jupyter Notebook**: Interactive development environment
+- **PySpark 3.0+**: Distributed data processing and machine learning
+- **Python 3.8+**: Base environment  
+- **Java 8+**: Required for PySpark
 - **Matplotlib/Seaborn**: Data visualization
-- **Pandas**: Data manipulation and analysis
-
-## 📋 Assignment Requirements Fulfilled
-
-✅ **Data Processing**: PySpark implementation for large dataset  
-✅ **Feature Selection**: 10 variables (3 continuous, 2 categorical)  
-✅ **Feature Engineering**: Polynomial features and preprocessing pipeline  
-✅ **Model Training**: Linear Regression, Polynomial Regression, Random Forest  
-✅ **Model Evaluation**: RMSE, R², MAE metrics with statistical analysis  
-✅ **Visualization**: Diagnostic plots and model comparison  
-✅ **Documentation**: Comprehensive notebook with interpretations  
-
-## 🔗 Repository
-
-- **GitHub**: [https://github.com/met-ad-688/assignment-04-samarthya](https://github.com/met-ad-688/assignment-04-samarthya)
-- **Jupyter Notebook**: `salary_prediction_analysis.ipynb`
-
-## 👨‍💻 Author
-
-**Samarthya**  
-Course: MET AD 688  
-Assignment: 04 - Salary Prediction with PySpark
-
-## 📝 License
-
-This project is for educational purposes as part of MET AD 688 coursework.
+- **Pandas**: Data manipulation for result analysis
 
 ---
 
-**Note**: Run all cells in the Jupyter notebook sequentially to reproduce the complete analysis. The notebook includes detailed explanations, code comments, and interpretations for each step of the machine learning pipeline.
+**Course**: MET AD 688 | **Institution**: Boston University | **Semester**: Fall 2025

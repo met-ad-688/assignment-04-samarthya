@@ -1,44 +1,38 @@
 ---
-title: "Assignment 04: Salary Prediction Analysis using PySpark"
-subtitle: "Comprehensive Machine Learning Pipeline for Lightcast Job Postings"
+title: "Assignment 04: Salary Prediction Analysis"
+subtitle: Exploring Job Salary Prediction with Machine Learning
 author:
   - name: Saurabh Sharma
     affiliations:
       - id: bu
         name: Boston University
-        city: Boston
-        state: MA
 number-sections: true
 date: today
-date-modified: today
-date-format: long
 format:
   html:
     theme: cerulean
     toc: true
     toc-depth: 3
     code-fold: true
-    fig-cap-location: bottom
-    tbl-cap-location: top
+  docx: default
 
 execute:
-  echo: false
-  eval: false
-  freeze: auto
+  echo: true
+  warning: false
 ---
 
-# Executive Summary
+# Objectives
 
-This report presents a comprehensive machine learning analysis for salary prediction using the Lightcast job postings dataset. Using PySpark for distributed data processing, we implemented and evaluated three regression models: Linear Regression, Polynomial Regression, and Random Forest. The analysis processed 49,352 valid job records with engineered features and hierarchical median imputation for missing salary data.
+This analysis explores building machine learning models to predict job salaries from the Lightcast job postings dataset. Our journey includes:
 
-**Key Findings:**
+- **Data Exploration**: Understanding the structure and quality of job posting data
+- **Feature Engineering**: Creating meaningful predictors from job characteristics  
+- **Model Development**: Implementing and comparing three regression approaches
+- **Performance Evaluation**: Assessing model effectiveness with multiple metrics
+- **Insights Discovery**: Identifying key factors that drive salary predictions
 
-- **Best Model**: Random Forest Regressor (R² = 0.1789, RMSE = $35,144)
-- **Primary Predictor**: Years of experience accounts for 58.7% of model importance
-- **Business Impact**: Average prediction error of ±$26,316 (22.8% of mean salary)
-- **Data Insights**: Systematic underprediction observed across all models
 
-# Introduction and Objectives
+Let's begin our exploration.
 
 ## Problem Statement
 
@@ -70,335 +64,1258 @@ This analysis aims to:
 
 ## Data Processing Pipeline
 
-### 1. Data Loading and Exploration
+### 1. Environment Setup and Data Loading
 
-```python
-# PySpark configuration for large-scale processing
-spark = SparkSession.builder \
-    .appName("SalaryPredictionAnalysis") \
-    .config("spark.sql.adaptive.enabled", "true") \
-    .getOrCreate()
+```{python}
+#| label: setup-environment
+#| echo: true
+#| output: true
 
-# Enhanced CSV parsing for complex data structures  
-df = spark.read.csv(data_path, header=True, inferSchema=True, 
-                   multiLine=True, escape="\"")
+# Import required libraries
+import os
+from IPython.display import HTML, Markdown, display
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when, coalesce, expr, trim, mean, isnan, isnull
+from pyspark.sql.types import *
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor
+from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.ml import Pipeline
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np
+
+# Set random seed for reproducibility
+RANDOM_SEED = 42
+
+# Initialize Spark session with optimized memory configuration
+try:
+    spark = SparkSession.builder \
+        .appName("SalaryPredictionAnalysis") \
+        .config("spark.driver.memory", "8g") \
+        .config("spark.driver.maxResultSize", "4g") \
+        .config("spark.executor.memory", "4g") \
+        .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+        .config("spark.sql.columnNameOfCorruptRecord", "_corrupt_record") \
+        .config("spark.sql.csv.maxColumns", "200") \
+        .config("spark.sql.csv.maxCharsPerColumn", "1000") \
+        .getOrCreate()
+    
+    display(Markdown(f"""
+::: {{.callout-note}}
+## ✅ PySpark session initialized successfully!
+  - Spark version: {spark.version}
+:::"""))
+    
+except Exception as e:
+    print(f"❌ Error initializing Spark: {str(e)}")
 ```
 
-**Key Insight**: The dataset required specialized CSV parsing with `multiLine=True` and `escape="\""` options to handle embedded quotes and multi-line content in job descriptions and education fields.
+```{python}
+#| label: load-data
+#| echo: true
+#| output: true
 
-### 2. Target Variable Engineering
+# Load the Lightcast job postings dataset
+data_path = "data/lightcast_job_postings.csv"
 
-A critical innovation was creating a robust target variable:
+print(" Loading dataset...")
+try:
+    # Check if file exists
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found: {data_path}")
+    
+    # Load CSV with PySpark - using stable configuration that handles large text fields
+    df = spark.read \
+        .option("maxColumns", "200") \
+        .option("columnNameOfCorruptRecord", "_corrupt_record") \
+        .option("mode", "PERMISSIVE") \
+        .csv(data_path, escape="\"", multiLine=True, inferSchema=True, header=True)    # Get basic statistics without caching first
+    row_count = df.count()
+    col_count = len(df.columns)
+    
+    display(Markdown(f"""
+::: {{.callout-note}}
+## ✅ Dataset Loaded Successfully!
+- **Shape:** {row_count:,} rows × {col_count} columns
+- **File size:** {os.path.getsize(data_path) / (1024**2):.1f} MB
+:::
+    """))
+    
+    # Show column overview in markdown table format
+    # Create markdown table rows (showing first 20 and last 10 for brevity in DOCX)
+    all_columns = df.columns
+    if len(all_columns) <= 30:
+        # Show all if 30 or fewer
+        column_list = '\n'.join([f"{i+1}. {col_name}" for i, col_name in enumerate(all_columns)])
+    else:
+        # Show first 20 and last 10
+        first_20 = '\n'.join([f"{i+1}. {col_name}" for i, col_name in enumerate(all_columns[:20])])
+        last_10 = '\n'.join([f"{i+1}. {col_name}" for i, col_name in enumerate(all_columns[-10:], start=len(all_columns)-10)])
+        column_list = f"{first_20}\n\n*... {len(all_columns) - 30} columns omitted ...*\n\n{last_10}"
+    
+    display(Markdown(f"""
+::: {{.callout-note collapse="true"}}
+## 📋 Column Overview ({col_count} columns)
 
-```python
-# SALARY_AVG = (SALARY_FROM + SALARY_TO) / 2 with hierarchical imputation
+{column_list}
+:::
+"""))
+    
+except Exception as e:
+    print(f"❌ Error loading dataset: {str(e)}")
+    print("Please ensure the data file exists and is accessible")
+    raise
+```
+
+### 2. Data Quality Assessment
+
+```{python}
+#| label: data-quality
+#| echo: true
+#| output: true
+
+# Analyze key columns for missing values (focusing on essential columns for memory efficiency)
+key_columns = [ 'SALARY', 
+                'SALARY_FROM', 
+                'SALARY_TO', 
+                'MIN_YEARS_EXPERIENCE', 
+                'MAX_YEARS_EXPERIENCE', 
+                'EMPLOYMENT_TYPE_NAME', 
+                'STATE_NAME']  # Limited set for memory management
+
+missing_stats = []
+
+for col_name in key_columns:
+    if col_name in df.columns:
+        try:
+            # Handle different data types properly with memory optimization
+            column_type = dict(df.dtypes)[col_name]
+            
+            if column_type in ['bigint', 'int', 'double', 'float']:
+                # For numeric columns, only check for null
+                null_count = df.filter(col(col_name).isNull()).count()
+            else:
+                # For string columns, check for null and empty strings (simplified)
+                null_count = df.filter(col(col_name).isNull()).count()
+            
+            total_count = row_count  # Use already computed row count
+            
+            # % calculation
+            null_percentage = (null_count / total_count) * 100
+            
+            missing_stats.append({
+                'Column': col_name,
+                'Missing_Count': null_count,
+                'Missing_Percentage': null_percentage,
+                'Data_Type': column_type
+            })
+            
+        except Exception as e:
+            print(f"{col_name:<25}: Error analyzing - {str(e)}")
+
+# Display missing values analysis as a formatted table
+if missing_stats:
+    missing_df = pd.DataFrame(missing_stats)
+    
+    # Create markdown table rows
+    table_rows = '\n'.join([
+        f"| {row['Column']} | {row['Missing_Count']:,} | {row['Missing_Percentage']:.1f}% | {row['Data_Type']} |"
+        for _, row in missing_df.iterrows()
+    ])
+    
+    highest_missing_col = missing_df.loc[missing_df['Missing_Percentage'].idxmax()]
+    
+    display(Markdown(f"""
+::: {{.callout-note}}
+## Missing Values Analysis
+
+| Column | Missing Count | Missing % | Data Type |
+|--------|---------------|-----------|-----------|
+{table_rows}
+
+### Summary:
+
+  - **Columns analyzed:** {len(missing_df)}
+  - **Highest missing:** {missing_df['Missing_Percentage'].max():.1f}% ({highest_missing_col['Column']})
+  - **Columns with <50% missing:** {(missing_df['Missing_Percentage'] < 50).sum()}
+:::
+"""))
+    
+    # Make missing stats available globally for summary
+    global missing_analysis
+
+    missing_analysis = {
+        'highest_missing_percentage': missing_df['Missing_Percentage'].max(),
+        'highest_missing_column': highest_missing_col['Column'],
+        'total_columns_analyzed': len(missing_df),
+        'columns_under_50_missing': (missing_df['Missing_Percentage'] < 50).sum()
+    }
+```
+
+### 3. Target Variable Engineering and Imputation
+
+```{python}
+#| label: target-engineering
+#| echo: true
+#| output: true
+
+# Step 1: Create SALARY_AVG from SALARY_FROM and SALARY_TO
 df_salary = df.withColumn("SALARY_AVG", 
-    when((col("SALARY_FROM").isNotNull()) & (col("SALARY_TO").isNotNull()), 
+    when((col("SALARY_FROM").isNotNull()) & (col("SALARY_TO").isNotNull()) & 
+         (col("SALARY_FROM") > 0) & (col("SALARY_TO") > 0),
          (col("SALARY_FROM") + col("SALARY_TO")) / 2.0)
-    .otherwise(col("SALARY"))
+    .otherwise(col("SALARY").cast("double"))
 )
+
+display(Markdown("""
+::: {.callout-tip}
+## ✅ Target Variable Created
+Created **SALARY_AVG** column using average of salary range: `(SALARY_FROM + SALARY_TO) / 2`
+:::
+"""))
+
+# Step 2: Hierarchical median imputation
+
+# Calculate medians at different granularities
+valid_salary_df = df_salary.filter(col("SALARY_AVG").isNotNull() & (col("SALARY_AVG") > 0))
+
+# City + Industry median
+median_by_city_naics = valid_salary_df.groupBy("CITY_NAME", "NAICS6_NAME") \
+    .agg(expr("percentile_approx(SALARY_AVG, 0.5)").alias("median_salary_city_naics"))
+
+# City median (fallback)
+median_by_city = valid_salary_df.groupBy("CITY_NAME") \
+    .agg(expr("percentile_approx(SALARY_AVG, 0.5)").alias("median_salary_city"))
+
+# Overall median (final fallback)
+overall_median = valid_salary_df.select(expr("percentile_approx(SALARY_AVG, 0.5)").alias("overall_median")).collect()[0][0]
+
+# Get counts for display
+city_naics_count = median_by_city_naics.count()
+city_count = median_by_city.count()
+
+display(Markdown(f"""
+::: {{.callout-note}}
+## 📊 Hierarchical Median Calculation
+
+  - **City + Industry combinations:** {city_naics_count:,}
+  - **City-only combinations:** {city_count:,}
+  - **Overall median salary:** ${overall_median:,.2f}
+
+:::
+"""))
+
+# Apply hierarchical imputation
+df_with_medians = df_salary \
+    .join(median_by_city_naics, ["CITY_NAME", "NAICS6_NAME"], "left") \
+    .join(median_by_city, ["CITY_NAME"], "left")
+
+df_imputed = df_with_medians.withColumn("SALARY_AVG_IMPUTED",
+    when(col("SALARY_AVG").isNotNull() & (col("SALARY_AVG") > 0), col("SALARY_AVG"))
+    .when(col("median_salary_city_naics").isNotNull(), col("median_salary_city_naics"))
+    .when(col("median_salary_city").isNotNull(), col("median_salary_city"))
+    .otherwise(overall_median)
+)
+
+# Show imputation results
+original_null_count = df_salary.filter(col("SALARY_AVG").isNull() | (col("SALARY_AVG") <= 0)).count()
+imputed_null_count = df_imputed.filter(col("SALARY_AVG_IMPUTED").isNull() | (col("SALARY_AVG_IMPUTED") <= 0)).count()
+
+display(Markdown(f"""
+::: {{.callout-tip}}
+## ✅ Imputation Results
+
+- **Before:** {original_null_count:,} missing salaries
+- **After:** {imputed_null_count:,} missing salaries  
+- **Imputed:** {original_null_count - imputed_null_count:,} records
+:::
+"""))
+
+# Update main dataframe
+df = df_imputed.drop("median_salary_city_naics", "median_salary_city", "SALARY_AVG") \
+               .withColumnRenamed("SALARY_AVG_IMPUTED", "SALARY_AVG")
+
+# Get final dataset stats
+final_row_count = df.count()
+final_col_count = len(df.columns)
+
+display(Markdown(f"""
+::: {{.callout-note}}
+## 📦 Final Dataset
+
+**{final_row_count:,}** rows × **{final_col_count}** columns
+:::
+"""))
+
 ```
-
-**Hierarchical Median Imputation Strategy**:
-1. **Primary**: Median by CITY_NAME & NAICS6_NAME (11,471 combinations)
-2. **Secondary**: Median by CITY_NAME only (2,434 combinations)  
-3. **Fallback**: Overall median ($113,472)
-
-**Results**: 40,100 records imputed (100% coverage achieved)
 
 ## Feature Selection and Engineering
 
-### Selected Features (10 variables):
+::: {.callout-note}
+## 📊 Selected Features
 
-**Continuous Variables (3)**:
-- `MIN_YEARS_EXPERIENCE`: Primary experience requirement
-- `MAX_YEARS_EXPERIENCE`: Maximum experience threshold  
-- `DURATION`: Job posting duration in days
+### Continuous Variables (3)
 
-**Categorical Variables (2)**:
-- `EMPLOYMENT_TYPE_NAME`: Full-time, part-time, contract
-- `REMOTE_TYPE_NAME`: Remote, hybrid, on-site options
+- **MIN_YEARS_EXPERIENCE:** Primary experience requirement
+- **MAX_YEARS_EXPERIENCE:** Maximum experience threshold
+- **DURATION:** Job posting duration in days
 
-**Additional Features (5)**:
-- `EDUCATION_LEVELS_NAME`: Educational requirements
-- `STATE_NAME`: Geographic location  
-- `IS_INTERNSHIP`: Binary internship indicator
-- `COMPANY_IS_STAFFING`: Staffing company flag
-- `MIN_EDULEVELS`: Ordinal education level
+### Categorical Variables (5)
 
-### Polynomial Feature Creation
+- **EMPLOYMENT_TYPE_NAME:** Full-time, part-time, contract
+- **REMOTE_TYPE_NAME:** Remote, hybrid, on-site options
+- **EDUCATION_LEVELS_NAME:** Educational requirements
+- **STATE_NAME:** Geographic location
+- **IS_INTERNSHIP:** Binary internship indicator
 
-Enhanced the linear model with quadratic terms:
-```python
-# Create polynomial feature for experience
-df_featured = df_selected.withColumn("MIN_YEARS_EXPERIENCE_SQ", 
-                                    col("MIN_YEARS_EXPERIENCE") * col("MIN_YEARS_EXPERIENCE"))
+### Additional Features (2)
+
+- **COMPANY_IS_STAFFING:** Staffing company flag
+- **MIN_EDULEVELS:** Ordinal education level
+:::
+
+```{python}
+#| label: feature-engineering
+#| echo: true
+#| output: true
+
+# Define selected features for modeling
+selected_features = [
+    'MIN_YEARS_EXPERIENCE', 'MAX_YEARS_EXPERIENCE', 'DURATION',
+    'EMPLOYMENT_TYPE_NAME', 'REMOTE_TYPE_NAME', 'EDUCATION_LEVELS_NAME', 
+    'STATE_NAME', 'IS_INTERNSHIP', 'COMPANY_IS_STAFFING', 'MIN_EDULEVELS'
+]
+
+
+df_featured = df
+
+# Add numeric feature engineering
+df_featured = df_featured.withColumn("EXPERIENCE_MID_YEARS", 
+                           (col("MIN_YEARS_EXPERIENCE") + col("MAX_YEARS_EXPERIENCE")) / 2.0)
+
+df_featured = df_featured.withColumn("POSTING_DURATION", 
+                                    when(col("DURATION").isNotNull() & (col("DURATION") > 0), 
+                                         col("DURATION")).otherwise(30))
+
+df_featured = df_featured.withColumn("SALARY_POSTING_AVAILABLE", 
+                                    when(col("SALARY_AVG").isNotNull(), 1).otherwise(0))
+
+display(Markdown("""
+::: {.callout-tip}
+## 🔧 Engineered Features
+
+- **EXPERIENCE_MID_YEARS:** Average of min/max experience
+- **POSTING_DURATION:** Job posting duration (default 30 days)
+- **SALARY_POSTING_AVAILABLE:** Binary indicator for salary availability
+:::
+"""))
+
+# Filter to records with valid salary data for modeling
+df_processed = df_featured.filter(col("SALARY_AVG").isNotNull() & (col("SALARY_AVG") > 0))
+valid_salary_records = df_processed.count()
+
+# Display modeling dataset statistics
+display(Markdown(f"""
+::: {{.callout-tip}}
+## 📈 Modeling Dataset
+
+- **Records with valid salaries:** {valid_salary_records:,}
+- **Percentage of original data:** {(valid_salary_records / df.count()) * 100:.1f}%
+:::
+"""))
 ```
 
-## Data Preprocessing Pipeline
+### Data Preprocessing Pipeline
 
-### Categorical Encoding Pipeline
-```python
-# StringIndexer → OneHotEncoder → VectorAssembler
+```{python}
+#| label: preprocessing-pipeline
+#| echo: true
+#| output: true
+
+# Define categorical and numerical features
+categorical_features = [
+    'EMPLOYMENT_TYPE_NAME', 
+    'REMOTE_TYPE_NAME', 
+    'EDUCATION_LEVELS_NAME', 
+    'STATE_NAME'
+]
+
+numerical_features = [
+    'MIN_YEARS_EXPERIENCE', 
+    'MAX_YEARS_EXPERIENCE', 
+    'DURATION', 
+    'EXPERIENCE_MID_YEARS', 
+    'POSTING_DURATION', 
+    'SALARY_POSTING_AVAILABLE'
+]
+
+# Create feature lists for display
+categorical_list = '\n'.join([f"{i+1}. {feat}" for i, feat in enumerate(categorical_features)])
+numerical_list = '\n'.join([f"{i+1}. {feat}" for i, feat in enumerate(numerical_features)])
+
+display(Markdown(f"""
+::: {{.callout-note}}
+## 📋 Feature Categories
+
+### Categorical Features ({len(categorical_features)})
+
+{categorical_list}
+
+### Numerical Features ({len(numerical_features)})
+
+{numerical_list}
+:::
+"""))
+
+# Create preprocessing pipeline
+# Step 1: String Indexers for categorical variables
+indexers = [StringIndexer(inputCol=feature, outputCol=feature + "_indexed", handleInvalid="keep") 
+            for feature in categorical_features]
+
+# Step 2: One-Hot Encoders
+encoders = [OneHotEncoder(inputCol=feature + "_indexed", outputCol=feature + "_encoded") 
+            for feature in categorical_features]
+
+# Step 3: Vector Assembler
+all_feature_cols = numerical_features + [feature + "_encoded" for feature in categorical_features]
+vector_assembler = VectorAssembler(inputCols=all_feature_cols, outputCol="features", handleInvalid="skip")
+
+# Create and fit preprocessing pipeline
 pipeline_stages = indexers + encoders + [vector_assembler]
 preprocessing_pipeline = Pipeline(stages=pipeline_stages)
+
+display(Markdown(f"""
+::: {{.callout-tip}}
+## 🔧 Pipeline Stages
+
+**Total stages:** {len(pipeline_stages)}
+
+- **String Indexers:** {len(indexers)}
+- **One-Hot Encoders:** {len(encoders)}
+- **Vector Assembler:** 1
+:::
+"""))
+
+# Fit preprocessing pipeline
+preprocessing_model = preprocessing_pipeline.fit(df_processed)
+df_preprocessed = preprocessing_model.transform(df_processed)
+
+display(Markdown(f"""
+::: {{.callout-tip}}
+## ✅ Preprocessing Completed
+
+**Final feature vector dimensions:** {len(all_feature_cols)} input features
+:::
+"""))
+
+# Split data for training and testing
+train_data, test_data = df_preprocessed.randomSplit([0.8, 0.2], seed=RANDOM_SEED)
+
+# Cache the data for better performance
+train_data.cache()
+test_data.cache()
+
+try:
+    # Calculate counts once and store them
+    total_records = df_preprocessed.count()
+    train_count = train_data.count()
+    test_count = test_data.count()
+    
+    train_percentage = (train_count / total_records) * 100
+    test_percentage = (test_count / total_records) * 100
+    
+    display(Markdown(f"""
+::: {{.callout-note}}
+## 📈 Train/Test Split
+
+- **Training data:** {train_count:,} records ({train_percentage:.1f}%)
+- **Testing data:** {test_count:,} records ({test_percentage:.1f}%)
+- **Total processed:** {total_records:,} records
+:::
+"""))
+except Exception as e:
+    print(f"⚠️ Error calculating data split statistics: {str(e)}")
+    print("Proceeding with data split (counts not displayed)")
 ```
 
-**Key Insight**: The preprocessing pipeline converted categorical variables into 101-dimensional feature vectors, enabling efficient distributed processing while preserving categorical relationships.
+# Model Development and Training
 
+## Model Implementation
+
+```{python}
+#| label: model-training
+#| echo: true
+#| output: true
+
+display(Markdown("""
+::: {.callout-note}
 ## Model Training and Evaluation
+Initializing three regression models for salary prediction
+:::
+"""))
 
-### Data Splitting Strategy
-- **Training Set**: 39,452 records (79.9%)
-- **Test Set**: 9,900 records (20.1%)  
-- **Random Seed**: 42 (for reproducibility)
+# Initialize evaluators
+evaluator_rmse = RegressionEvaluator(labelCol="SALARY_AVG", predictionCol="prediction", metricName="rmse")
+evaluator_r2 = RegressionEvaluator(labelCol="SALARY_AVG", predictionCol="prediction", metricName="r2")
+evaluator_mae = RegressionEvaluator(labelCol="SALARY_AVG", predictionCol="prediction", metricName="mae")
 
-**Justification**: The 80/20 split provides sufficient training data while maintaining a substantial test set for reliable evaluation of model generalization.
+# Initialize results storage
+model_results = {}
 
-# Results and Analysis
+# 1. Linear Regression
+try:
+    display(Markdown("""
+::: {.callout-tip}
+## Training Linear Regression
+Building baseline linear model...
+:::
+"""))
+    lr = LinearRegression(featuresCol="features", labelCol="SALARY_AVG", regParam=0.1, maxIter=100)
+    lr_model = lr.fit(train_data)
+    lr_predictions = lr_model.transform(test_data)
+    
+    # Cache predictions for performance
+    lr_predictions.cache()
+    
+    lr_rmse = evaluator_rmse.evaluate(lr_predictions)
+    lr_r2 = evaluator_r2.evaluate(lr_predictions)
+    lr_mae = evaluator_mae.evaluate(lr_predictions)
+    
+    model_results['Linear Regression'] = {
+        'rmse': lr_rmse, 'r2': lr_r2, 'mae': lr_mae,
+        'model': lr_model, 'predictions': lr_predictions
+    }
+    
+    display(Markdown(f"""
+::: {{.callout-note}}
+## ✅ Linear Regression Results
 
-## Model Performance Comparison
+- **RMSE:** ${lr_rmse:,.2f}
+- **R²:** {lr_r2:.4f}
+- **MAE:** ${lr_mae:,.2f}
+:::
+"""))
+    
+except Exception as e:
+    display(Markdown(f"""
+::: {{.callout-warning}}
+## ❌ Linear Regression Training Failed
+Error: {str(e)}
+:::
+"""))
+    model_results['Linear Regression'] = None
 
-![Model Performance Comparison](figures/model_performance_comparison.png)
+# 2. Polynomial Regression (Linear Regression with polynomial features)
+try:
+    display(Markdown("""
+::: {.callout-tip}
+## 🟡 Training Polynomial Regression
+Adding polynomial features for non-linear relationships...
+:::
+"""))
+    
+    # Add polynomial features for experience
+    df_poly = df_preprocessed.withColumn("MIN_YEARS_EXPERIENCE_SQ", 
+                                        col("MIN_YEARS_EXPERIENCE") * col("MIN_YEARS_EXPERIENCE"))
 
-The comprehensive evaluation reveals distinct performance characteristics across the three models:
+    # Update feature vector for polynomial model
+    polynomial_feature_cols = all_feature_cols + ["MIN_YEARS_EXPERIENCE_SQ"]
+    poly_vector_assembler = VectorAssembler(inputCols=polynomial_feature_cols, outputCol="poly_features")
+    df_poly = poly_vector_assembler.transform(df_poly)
 
-| Model | RMSE ($) | R² | MAE ($) | Interpretation |
-|-------|----------|-----|---------|----------------|
-| **Linear Regression** | 35,801 | 0.1478 | 26,872 | Baseline model with interpretable coefficients |
-| **Polynomial Regression** | 35,643 | 0.1554 | 26,692 | 5.08% improvement over linear with quadratic terms |
-| **Random Forest** | 35,144 | 0.1789 | 26,316 | **Best overall performance** with ensemble learning |
+    # Split polynomial data
+    poly_train, poly_test = df_poly.randomSplit([0.8, 0.2], seed=RANDOM_SEED)
+    poly_train.cache()
+    poly_test.cache()
 
-**Key Insights:**
-- **Random Forest** achieved the best performance across all metrics
-- **Polynomial features** provided modest but consistent improvements (+5.08% R²)
-- **All models** show relatively low R² values (0.15-0.18), indicating substantial unexplained variance
-- **Error rates** represent 23-31% of mean salary, suggesting room for improvement
+    poly_lr = LinearRegression(featuresCol="poly_features", labelCol="SALARY_AVG", regParam=0.1, maxIter=100)
+    poly_lr_model = poly_lr.fit(poly_train)
+    poly_lr_predictions = poly_lr_model.transform(poly_test)
+    
+    # Cache predictions
+    poly_lr_predictions.cache()
+
+    # Update evaluators for polynomial features
+    evaluator_rmse_poly = RegressionEvaluator(labelCol="SALARY_AVG", predictionCol="prediction", metricName="rmse")
+    evaluator_r2_poly = RegressionEvaluator(labelCol="SALARY_AVG", predictionCol="prediction", metricName="r2")
+    evaluator_mae_poly = RegressionEvaluator(labelCol="SALARY_AVG", predictionCol="prediction", metricName="mae")
+
+    poly_lr_rmse = evaluator_rmse_poly.evaluate(poly_lr_predictions)
+    poly_lr_r2 = evaluator_r2_poly.evaluate(poly_lr_predictions)
+    poly_lr_mae = evaluator_mae_poly.evaluate(poly_lr_predictions)
+    
+    model_results['Polynomial Regression'] = {
+        'rmse': poly_lr_rmse, 'r2': poly_lr_r2, 'mae': poly_lr_mae,
+        'model': poly_lr_model, 'predictions': poly_lr_predictions
+    }
+
+    display(Markdown(f"""
+::: {{.callout-note}}
+## ✅ Polynomial Regression Results
+
+- **RMSE:** ${poly_lr_rmse:,.2f}
+- **R²:** {poly_lr_r2:.4f}
+- **MAE:** ${poly_lr_mae:,.2f}
+:::
+"""))
+    
+except Exception as e:
+    display(Markdown(f"""
+::: {{.callout-warning}}
+## ❌ Polynomial Regression Training Failed
+Error: {str(e)}
+:::
+"""))
+    model_results['Polynomial Regression'] = None
+
+# 3. Random Forest Regression
+try:
+    display(Markdown("""
+::: {.callout-tip}
+## 🟢 Training Random Forest
+Building ensemble model with 100 trees...
+:::
+"""))
+    rf = RandomForestRegressor(featuresCol="features", labelCol="SALARY_AVG", 
+                              numTrees=100, maxDepth=10, seed=RANDOM_SEED)
+    rf_model = rf.fit(train_data)
+    rf_predictions = rf_model.transform(test_data)
+    
+    # Cache predictions
+    rf_predictions.cache()
+
+    rf_rmse = evaluator_rmse.evaluate(rf_predictions)
+    rf_r2 = evaluator_r2.evaluate(rf_predictions)
+    rf_mae = evaluator_mae.evaluate(rf_predictions)
+    
+    model_results['Random Forest'] = {
+        'rmse': rf_rmse, 'r2': rf_r2, 'mae': rf_mae,
+        'model': rf_model, 'predictions': rf_predictions
+    }
+
+    display(Markdown(f"""
+::: {{.callout-note}}
+## ✅ Random Forest Results
+
+- **RMSE:** ${rf_rmse:,.2f}
+- **R²:** {rf_r2:.4f}
+- **MAE:** ${rf_mae:,.2f}
+:::
+"""))
+    
+except Exception as e:
+    display(Markdown(f"""
+::: {{.callout-warning}}
+## ❌ Random Forest Training Failed
+Error: {str(e)}
+:::
+"""))
+    model_results['Random Forest'] = None
+
+# Model comparison
+successful_models = []
+comparison_table_rows = []
+
+for model_name, results in model_results.items():
+    if results is not None:
+        rmse, r2, mae = results['rmse'], results['r2'], results['mae']
+        comparison_table_rows.append(f"| {model_name} | ${rmse:,.0f} | {r2:.4f} | ${mae:,.0f} |")
+        successful_models.append((model_name, rmse, r2, mae))
+    else:
+        comparison_table_rows.append(f"| {model_name} | FAILED | FAILED | FAILED |")
+
+comparison_table = '\n'.join(comparison_table_rows)
+
+# Identify best model if we have successful models
+if successful_models:
+    best_r2_idx = max(range(len(successful_models)), key=lambda i: successful_models[i][2])
+    best_model_name = successful_models[best_r2_idx][0]
+    best_r2 = successful_models[best_r2_idx][2]
+    best_rmse = successful_models[best_r2_idx][1]
+
+    display(Markdown(f"""
+::: {{.callout-important}}
+## 📊 Model Performance Comparison
+
+| Model | RMSE | R² | MAE |
+|-------|------|-----|-----|
+{comparison_table}
+
+### Best Model: {best_model_name}
+
+- **R² Score:** {best_r2:.4f}
+- **RMSE:** ${best_rmse:,.2f}
+- **Models Evaluated:** {len(model_results)}
+:::
+"""))
+    
+    # Store best model info for later use
+    best_model_results = model_results[best_model_name]
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ❌ No Models Trained Successfully
+All model training attempts failed. Please check the data and configuration.
+:::
+"""))
+    best_model_results = None
+```
 
 ## Feature Importance Analysis
 
-![Feature Importance Analysis](figures/feature_importance.png)
+```{python}
+#| label: feature-importance
+#| echo: true
+#| output: true
 
-The Random Forest model reveals the relative importance of different factors in salary determination:
+display(Markdown("""
+::: {.callout-note}
+## 🔍 Random Forest Feature Importance Analysis
+Analyzing feature contributions to model predictions
+:::
+"""))
 
-**Top 5 Most Important Features:**
-1. **MIN_YEARS_EXPERIENCE** (0.587) - Dominates salary predictions
-2. **Feature_22** (0.088) - Likely categorical encoding for specific locations/industries
-3. **MIN_EDULEVELS** (0.079) - Education level significance
-4. **MAX_YEARS_EXPERIENCE** (0.045) - Experience range upper bound
-5. **Feature_49** (0.038) - Additional categorical feature
+# Check if Random Forest model was successfully trained
+if best_model_results and 'Random Forest' in model_results and model_results['Random Forest'] is not None:
+    try:
+        rf_model = model_results['Random Forest']['model']
+        
+        # Get feature importances
+        feature_importances = rf_model.featureImportances.toArray()
 
-**Business Implications:**
-- **Experience is paramount**: Minimum years of experience accounts for nearly 60% of the model's decision-making
-- **Education matters**: Educational requirements contribute significantly to salary variations
-- **Location/Industry effects**: Categorical features (likely representing specific cities or industries) have notable impact
-- **Diminishing returns**: Maximum experience requirements have lower importance than minimum requirements
+        # Create feature name mapping - need to match the order in all_feature_cols
+        # Numerical features come first
+        numerical_feature_names = ['MIN_YEARS_EXPERIENCE', 'MAX_YEARS_EXPERIENCE', 'DURATION', 
+                                  'EXPERIENCE_MID_YEARS', 'POSTING_DURATION', 'SALARY_POSTING_AVAILABLE']
 
-## Linear Regression Coefficient Analysis
+        categorical_feature_bases = ['EMPLOYMENT_TYPE_NAME', 'REMOTE_TYPE_NAME', 'EDUCATION_LEVELS_NAME', 'STATE_NAME']
 
-The linear model provides interpretable insights into feature relationships:
+        # Build complete feature name list by getting encoded feature details
+        all_feature_names = numerical_feature_names.copy()
 
-**Key Coefficients:**
-- **MIN_YEARS_EXPERIENCE**: +$3,608 per year (strong positive impact)
-- **MAX_YEARS_EXPERIENCE**: +$284 per year (moderate positive impact)
-- **DURATION**: +$46 per day (longer postings = higher salaries)
-- **IS_INTERNSHIP**: -$13,549 (internships pay significantly less)
-- **COMPANY_IS_STAFFING**: -$3,816 (staffing companies offer lower compensation)
+        # For each categorical feature, get the number of encoded columns from the metadata
+        for cat_feature in categorical_feature_bases:
+            # Get the indexer and encoder from the preprocessing model
+            indexer_name = cat_feature + "_indexed"
+            encoder_name = cat_feature + "_encoded"
+            
+            try:
+                # Try to get the actual category labels from the indexer
+                for stage in preprocessing_model.stages:
+                    if hasattr(stage, 'getOutputCol') and stage.getOutputCol() == indexer_name:
+                        # This is the indexer, get the labels
+                        labels = stage.labels if hasattr(stage, 'labels') else None
+                        break
+                
+                # Get the size of the encoded vector
+                encoded_size = None
+                for stage in preprocessing_model.stages:
+                    if hasattr(stage, 'getInputCol') and stage.getInputCol() == indexer_name:
+                        # This is the encoder
+                        if hasattr(stage, 'getDropLast') and stage.getDropLast():
+                            encoded_size = len(labels) - 1 if labels else 1
+                        else:
+                            encoded_size = len(labels) if labels else 1
+                        break
+                
+                if encoded_size is None:
+                    encoded_size = 1
+                
+                # Add feature names with category labels if available
+                if labels and len(labels) > 0:
+                    for i in range(min(encoded_size, len(labels))):
+                        # Clean up label - handle lists and long strings
+                        label = labels[i]
+                        
+                        # If label is a list, extract first element or join
+                        if isinstance(label, (list, tuple)):
+                            if len(label) > 0:
+                                label = str(label[0])
+                            else:
+                                label = "Unknown"
+                        else:
+                            label = str(label)
+                        
+                        # Truncate very long labels and clean up
+                        label = label.strip('[]"\' ')
+                        if len(label) > 30:
+                            label = label[:27] + "..."
+                        
+                        all_feature_names.append(f"{cat_feature}={label}")
+                else:
+                    # Fallback to generic names
+                    for i in range(encoded_size):
+                        all_feature_names.append(f"{cat_feature}_cat{i}")
+                        
+            except Exception:
+                # Fallback: just add one generic name per categorical feature
+                all_feature_names.append(f"{cat_feature}_encoded")
 
-**Statistical Significance:**
-- Model intercept: $92,451 (baseline salary)
-- R² = 0.1478 (14.8% variance explained)
-- Experience shows strongest statistical significance
+        # Pad with generic names if needed (should not be necessary now)
+        while len(all_feature_names) < len(feature_importances):
+            all_feature_names.append(f"Feature_{len(all_feature_names)}")
+        
+        # Truncate if we have too many names
+        all_feature_names = all_feature_names[:len(feature_importances)]
 
-## Comprehensive Diagnostic Analysis
+        # Create importance dataframe
+        importance_data = {
+            'Feature': all_feature_names,
+            'Importance': feature_importances
+        }
 
-![Comprehensive Salary Analysis](figures/salary_analysis_comprehensive.png)
+        # Convert to pandas for easier manipulation
+        importance_df = pd.DataFrame(importance_data).sort_values('Importance', ascending=False)
 
-The four-panel diagnostic analysis reveals important model characteristics:
+        # Build top 10 features list
+        top_10_list = []
+        for i, (_, row) in enumerate(importance_df.head(10).iterrows()):
+            feature_name = row['Feature']
+            importance = row['Importance']
+            percentage = importance * 100
+            
+            top_10_list.append(f" - **{i+1}. {feature_name}:** {importance:.4f} ({percentage:.1f}%)\n")
+        
+        top_10_features = '\n'.join(top_10_list)
 
-### 1. Salary Distribution (Top Left)
-- **Mean salary**: $38,421 in the sample
-- **Median salary**: $41,600  
-- **Distribution**: Right-skewed with concentration around $35K-$45K
-- **Range**: $20K to $140K+ with notable tail
+        # Summary insights
+        top_feature = importance_df.iloc[0]
+        
+        # Calculate numerical vs categorical importance
+        numerical_total = importance_df[importance_df['Feature'].isin(numerical_feature_names)]['Importance'].sum()
+        categorical_total = importance_df[~importance_df['Feature'].isin(numerical_feature_names)]['Importance'].sum()
 
-### 2. Predictions vs Actual (Top Right)
-- **Pattern**: Systematic underprediction visible (points below diagonal)
-- **Clustering**: Strong concentration in mid-range salaries
-- **Outliers**: Model struggles with extreme high/low salaries
-- **Bias**: Consistent negative bias across salary ranges
+        display(Markdown(f"""
+::: {{.callout-tip}}
+## Top 10 Most Important Features
 
-### 3. Residual Analysis (Bottom Left)  
-- **Mean residual**: -$62,668 (systematic underprediction)
-- **Pattern**: Clear heteroscedasticity (increasing variance with prediction level)
-- **Distribution**: Non-random scatter suggesting model limitations
-- **Implications**: Model assumptions violated
+{top_10_features}
 
-### 4. Performance Summary Table (Bottom Right)
-- **Best metrics**: Random Forest across all measures
-- **Consistency**: Similar performance ranges across models
-- **Limitations**: All models show significant prediction errors
+### 🏆 Most Important Feature
 
-## Detailed Diagnostic Plots
+**{top_feature['Feature']}:** {top_feature['Importance']:.4f} ({top_feature['Importance']*100:.1f}%)
 
-The comprehensive diagnostic suite provides deep insights into model behavior:
+### Feature Category Analysis
 
-**1. Predictions vs Actual Plots**:
-- All models show systematic underprediction
-- Random Forest demonstrates slightly better scatter around the diagonal
-- Polynomial regression shows marginally improved fit over linear
+- **Numerical features:** {numerical_total:.4f} ({numerical_total*100:.1f}%)
+- **Categorical features:** {categorical_total:.4f} ({categorical_total*100:.1f}%)
+:::
+"""))
+        
+    except Exception as e:
+        display(Markdown(f"""
+::: {{.callout-warning}}
+## ❌ Feature Importance Analysis Failed
+Error: {str(e)}
+:::
+"""))
+        importance_df = None
 
-**2. Residuals vs Predicted Plots**:
-- Clear heteroscedasticity patterns across all models
-- Negative bias more pronounced at higher predicted salaries
-- Random Forest shows least systematic bias patterns
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ❌ Random Forest Model Not Available
+Feature importance analysis requires successful Random Forest training
+:::
+"""))
+    importance_df = None
+```
 
-**3. Histogram of Residuals**:
-- Non-normal residual distributions for all models
-- Left-skewed patterns indicating systematic underprediction
-- Shapiro-Wilk tests confirm departure from normality (p < 0.001)
+# Results and Analysis
 
-**4. QQ Plots**:
-- Heavy departure from normal distribution lines
-- Pronounced tails suggesting extreme residuals
-- Indicates model assumptions violated
+## Model Performance Visualizations
 
-**Statistical Test Results**:
-- **Normality**: All models fail Shapiro-Wilk test (p < 0.001)
-- **Homoscedasticity**: Concerning correlation coefficients (>0.96)
-- **Bias**: Large negative mean residuals across models
+```{python}
+#| label: model-performance-viz
+#| echo: true
+#| output: true
+#| fig-width: 8
+#| fig-height: 12
 
-# Discussion and Business Insights
+# Visualize model performance comparison
+if successful_models:
+    # Create figures directory if it doesn't exist
+    import os
+    os.makedirs('figures', exist_ok=True)
+    
+    # Create vertical layout (3 rows, 1 column)
+    fig, axes = plt.subplots(3, 1, figsize=(8, 12))
+    
+    model_names = [m[0] for m in successful_models]
+    rmse_values = [m[1] for m in successful_models]
+    r2_values = [m[2] for m in successful_models]
+    mae_values = [m[3] for m in successful_models]
+    
+    # RMSE Comparison
+    colors = ['#3498db', '#e74c3c', '#2ecc71']
+    axes[0].bar(model_names, rmse_values, color=colors[:len(model_names)], alpha=0.7, edgecolor='black')
+    axes[0].set_title('Root Mean Squared Error (RMSE)', fontsize=14, fontweight='bold', pad=15)
+    axes[0].set_ylabel('RMSE ($)', fontsize=11, fontweight='bold')
+    axes[0].tick_params(axis='x', rotation=45, labelsize=10)
+    axes[0].tick_params(axis='y', labelsize=10)
+    axes[0].grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for i, v in enumerate(rmse_values):
+        axes[0].text(i, v + max(rmse_values)*0.02, f'${v:,.0f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    # R² Comparison
+    axes[1].bar(model_names, r2_values, color=colors[:len(model_names)], alpha=0.7, edgecolor='black')
+    axes[1].set_title('R² Score (Coefficient of Determination)', fontsize=14, fontweight='bold', pad=15)
+    axes[1].set_ylabel('R² Score', fontsize=11, fontweight='bold')
+    axes[1].tick_params(axis='x', rotation=45, labelsize=10)
+    axes[1].tick_params(axis='y', labelsize=10)
+    axes[1].set_ylim([0, 1])
+    axes[1].grid(axis='y', alpha=0.3)
+    axes[1].axhline(y=0.5, color='red', linestyle='--', alpha=0.5, linewidth=2, label='Baseline (0.5)')
+    axes[1].legend(fontsize=10)
+    
+    # Add value labels
+    for i, v in enumerate(r2_values):
+        axes[1].text(i, v + 0.02, f'{v:.4f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    # MAE Comparison
+    axes[2].bar(model_names, mae_values, color=colors[:len(model_names)], alpha=0.7, edgecolor='black')
+    axes[2].set_title('Mean Absolute Error (MAE)', fontsize=14, fontweight='bold', pad=15)
+    axes[2].set_ylabel('MAE ($)', fontsize=11, fontweight='bold')
+    axes[2].tick_params(axis='x', rotation=45, labelsize=10)
+    axes[2].tick_params(axis='y', labelsize=10)
+    axes[2].grid(axis='y', alpha=0.3)
+    
+    # Add value labels
+    for i, v in enumerate(mae_values):
+        axes[2].text(i, v + max(mae_values)*0.02, f'${v:,.0f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    # Save in multiple formats
+    fig.savefig('figures/model_performance_comparison.png', dpi=300, bbox_inches='tight')
+    fig.savefig('figures/model_performance_comparison.svg', format='svg', bbox_inches='tight')
+    fig.savefig('figures/model_performance_comparison.html', format='svg', bbox_inches='tight')
+    
+    plt.show()
+    
+    display(Markdown(f"""
+::: {{.callout-tip}}
+## 📊 Model Performance Visualization Complete
 
-## Model Interpretation
+Compared **{len(successful_models)} models** across three key metrics (RMSE, R², MAE)
 
-### Random Forest Advantages
-1. **Ensemble Learning**: Combines 300 decision trees for robust predictions
-2. **Non-linearity**: Captures complex feature interactions automatically
-3. **Feature Importance**: Provides actionable insights for business decisions
-4. **Robustness**: Less sensitive to outliers than linear models
+### Figures saved to:
+  - `figures/model_performance_comparison.png`
+  - `figures/model_performance_comparison.svg`
+  - `figures/model_performance_comparison.html`
+:::
+"""))
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ⚠️ No Models Available for Visualization
+No successful models to visualize. Please check model training results.
+:::
+"""))
+```
 
-### Linear Model Benefits
-1. **Interpretability**: Clear coefficient meanings for business stakeholders
-2. **Simplicity**: Easy to implement and explain
-3. **Statistical Framework**: Formal hypothesis testing available
-4. **Computational Efficiency**: Fast training and prediction
+## Feature Importance Visualization
 
-### Polynomial Enhancement
-1. **Marginal Improvement**: 5% increase in R² over linear baseline
-2. **Experience Curvature**: Captures non-linear experience-salary relationships
-3. **Complexity Trade-off**: Modest gains for increased model complexity
+```{python}
+#| label: feature-importance-viz
+#| echo: true
+#| output: true
+#| fig-width: 10
+#| fig-height: 12
 
-## Business Applications
+# Visualize feature importance from Random Forest
+if importance_df is not None:
+    # Create a copy for display with cleaned feature names
+    display_df = importance_df.copy()
+    
+    # Clean feature names for better display
+    def clean_feature_name(name):
+        """Clean and shorten feature names for better visualization"""
+        # Remove list brackets and quotes
+        name = str(name).strip('[]"\' ')
+        
+        # If feature name contains '=', split and clean the value part
+        if '=' in name:
+            parts = name.split('=', 1)
+            feature_base = parts[0]
+            value = parts[1].strip('[]"\' ')
+            
+            # Shorten base feature name
+            if feature_base == 'EMPLOYMENT_TYPE_NAME':
+                feature_base = 'Employment'
+            elif feature_base == 'EDUCATION_LEVELS_NAME':
+                feature_base = 'Education'
+            elif feature_base == 'REMOTE_TYPE_NAME':
+                feature_base = 'Remote'
+            elif feature_base == 'STATE_NAME':
+                feature_base = 'State'
+            
+            # Truncate long values
+            if len(value) > 25:
+                value = value[:22] + "..."
+            
+            return f"{feature_base}: {value}"
+        else:
+            # For numerical features, shorten the name
+            name = name.replace('MIN_YEARS_EXPERIENCE', 'Min Exp (yrs)')
+            name = name.replace('MAX_YEARS_EXPERIENCE', 'Max Exp (yrs)')
+            name = name.replace('EXPERIENCE_MID_YEARS', 'Mid Exp (yrs)')
+            name = name.replace('POSTING_DURATION', 'Post Duration (days)')
+            name = name.replace('SALARY_POSTING_AVAILABLE', 'Salary Posted')
+            name = name.replace('DURATION', 'Duration')
+            return name
+    
+    display_df['Feature_Display'] = display_df['Feature'].apply(clean_feature_name)
+    
+    # Create vertical layout (2 rows, 1 column) for better DOCX compatibility
+    fig, axes = plt.subplots(2, 1, figsize=(10, 12))
+    
+    # Top 15 features bar chart
+    top_15 = display_df.head(15)
+    axes[0].barh(range(len(top_15)), top_15['Importance'], color='steelblue', alpha=0.7, edgecolor='black')
+    axes[0].set_yticks(range(len(top_15)))
+    axes[0].set_yticklabels(top_15['Feature_Display'], fontsize=9)
+    axes[0].invert_yaxis()
+    axes[0].set_xlabel('Importance Score', fontsize=12, fontweight='bold')
+    axes[0].set_title('Top 15 Most Important Features', fontsize=14, fontweight='bold', pad=15)
+    axes[0].grid(axis='x', alpha=0.3)
+    
+    # Add value labels
+    for i, v in enumerate(top_15['Importance']):
+        axes[0].text(v + 0.001, i, f'{v:.4f}', va='center', fontsize=9, fontweight='bold')
+    
+    # Cumulative importance
+    cumulative_importance = importance_df['Importance'].cumsum()
+    axes[1].plot(range(1, len(cumulative_importance) + 1), cumulative_importance, 
+                marker='o', markersize=4, linewidth=2, color='darkgreen')
+    axes[1].axhline(y=0.8, color='red', linestyle='--', alpha=0.7, linewidth=2, label='80% Threshold')
+    axes[1].axhline(y=0.9, color='orange', linestyle='--', alpha=0.7, linewidth=2, label='90% Threshold')
+    axes[1].set_xlabel('Number of Features', fontsize=12, fontweight='bold')
+    axes[1].set_ylabel('Cumulative Importance', fontsize=12, fontweight='bold')
+    axes[1].set_title('Cumulative Feature Importance', fontsize=14, fontweight='bold', pad=15)
+    axes[1].grid(alpha=0.3)
+    axes[1].legend(fontsize=10)
+    
+    # Find number of features for 80% and 90%
+    features_80 = (cumulative_importance >= 0.8).idxmax() + 1
+    features_90 = (cumulative_importance >= 0.9).idxmax() + 1
+    
+    axes[1].annotate(f'{features_80} features\n(80%)', 
+                    xy=(features_80, 0.8), xytext=(features_80 + 10, 0.75),
+                    arrowprops=dict(arrowstyle='->', color='red', lw=1.5),
+                    fontsize=10, ha='left')
+    
+    plt.tight_layout()
+    
+    # Save in multiple formats
+    fig.savefig('figures/feature_importance.png', dpi=300, bbox_inches='tight')
+    fig.savefig('figures/feature_importance.svg', format='svg', bbox_inches='tight')
+    fig.savefig('figures/feature_importance.html', format='svg', bbox_inches='tight')
+    
+    plt.show()
+    
+    display(Markdown(f"""
+::: {{.callout-tip}}
+## 📊 Feature Importance Insights
 
-### For Job Seekers
-1. **Experience Premium**: Each year of experience adds ~$3,600 in expected salary
-2. **Education Investment**: Higher education levels correlate with better compensation
-3. **Location Strategy**: Geographic location significantly impacts earning potential
-4. **Industry Selection**: Avoid staffing companies for higher direct compensation
+- **Top features** drive prediction accuracy
+- **{features_80} features** explain 80% of importance
+- **{features_90} features** explain 90% of importance
 
-### For Employers  
-1. **Competitive Benchmarking**: Models provide market-rate guidance
-2. **Budget Planning**: Expected errors of ±$26K inform budget ranges
-3. **Experience Valuation**: Quantified experience premiums for role design
-4. **Internship Pricing**: $13K discount typical for internship positions
+### Figures saved to:
+  - `figures/feature_importance.png`
+  - `figures/feature_importance.svg`
+  - `figures/feature_importance.html`
+:::
+"""))
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ⚠️ Feature Importance Data Not Available
+Feature importance visualization requires Random Forest model with successful training.
+:::
+"""))
+```
 
-### For Platform Developers
-1. **Feature Prioritization**: Experience data most critical for accuracy
-2. **Data Quality**: Location and industry information essential
-3. **Model Limitations**: Current approach explains only 18% of variance
-4. **Enhancement Opportunities**: Additional features needed for improvement
+## Prediction Analysis
 
-## Model Limitations and Future Improvements
+```{python}
+#| label: prediction-analysis-viz
+#| echo: false
+#| output: true
+#| fig-width: 10
+#| fig-height: 16
 
-### Current Limitations
-1. **Low Explanatory Power**: R² < 0.18 indicates missing important factors
-2. **Systematic Bias**: Consistent underprediction across salary ranges
-3. **Assumption Violations**: Non-normal residuals and heteroscedasticity
-4. **Feature Coverage**: Limited to 10 variables from 131 available
+# Analyze predictions vs actual values for best model
+if best_model_results is not None:
+    try:
+        # Get predictions from best model
+        predictions_pd = best_model_results['predictions'].select('SALARY_AVG', 'prediction').toPandas()
+        
+        # Sample for visualization (to avoid overplotting)
+        sample_size = min(5000, len(predictions_pd))
+        predictions_sample = predictions_pd.sample(n=sample_size, random_state=RANDOM_SEED)
+        
+        # Create vertical layout (4 rows, 1 column) for better DOCX compatibility
+        fig, axes = plt.subplots(4, 1, figsize=(10, 16))
+        
+        # 1. Actual vs Predicted Scatter Plot
+        axes[0].scatter(predictions_sample['SALARY_AVG'], predictions_sample['prediction'], 
+                          alpha=0.5, s=20, color='steelblue', edgecolor='none')
+        
+        # Perfect prediction line
+        min_val = min(predictions_sample['SALARY_AVG'].min(), predictions_sample['prediction'].min())
+        max_val = max(predictions_sample['SALARY_AVG'].max(), predictions_sample['prediction'].max())
+        axes[0].plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction')
+        
+        axes[0].set_xlabel('Actual Salary ($)', fontsize=12, fontweight='bold')
+        axes[0].set_ylabel('Predicted Salary ($)', fontsize=12, fontweight='bold')
+        axes[0].set_title(f'{best_model_name}: Actual vs Predicted Salaries', fontsize=14, fontweight='bold', pad=15)
+        axes[0].legend(fontsize=10)
+        axes[0].grid(alpha=0.3)
+        
+        # 2. Residuals Plot
+        residuals = predictions_sample['SALARY_AVG'] - predictions_sample['prediction']
+        axes[1].scatter(predictions_sample['prediction'], residuals, 
+                          alpha=0.5, s=20, color='coral', edgecolor='none')
+        axes[1].axhline(y=0, color='red', linestyle='--', lw=2, label='Zero Residual')
+        axes[1].set_xlabel('Predicted Salary ($)', fontsize=12, fontweight='bold')
+        axes[1].set_ylabel('Residuals ($)', fontsize=12, fontweight='bold')
+        axes[1].set_title('Residual Plot', fontsize=14, fontweight='bold', pad=15)
+        axes[1].legend(fontsize=10)
+        axes[1].grid(alpha=0.3)
+        
+        # 3. Residuals Distribution
+        axes[2].hist(residuals, bins=50, color='lightgreen', edgecolor='black', alpha=0.7)
+        axes[2].axvline(x=0, color='red', linestyle='--', lw=2, label='Zero Residual')
+        axes[2].set_xlabel('Residuals ($)', fontsize=12, fontweight='bold')
+        axes[2].set_ylabel('Frequency', fontsize=12, fontweight='bold')
+        axes[2].set_title('Distribution of Residuals', fontsize=14, fontweight='bold', pad=15)
+        axes[2].legend(fontsize=10)
+        axes[2].grid(axis='y', alpha=0.3)
+        
+        # 4. Error Percentage Distribution
+        error_percentage = (residuals / predictions_sample['SALARY_AVG']) * 100
+        axes[3].hist(error_percentage, bins=50, color='plum', edgecolor='black', alpha=0.7)
+        axes[3].axvline(x=0, color='red', linestyle='--', lw=2, label='Zero Error')
+        axes[3].set_xlabel('Prediction Error (%)', fontsize=12, fontweight='bold')
+        axes[3].set_ylabel('Frequency', fontsize=12, fontweight='bold')
+        axes[3].set_title('Distribution of Percentage Errors', fontsize=14, fontweight='bold', pad=15)
+        axes[3].legend(fontsize=10)
+        axes[3].grid(axis='y', alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Save in multiple formats
+        fig.savefig('figures/prediction_analysis.png', dpi=300, bbox_inches='tight')
+        fig.savefig('figures/prediction_analysis.svg', format='svg', bbox_inches='tight')
+        fig.savefig('figures/prediction_analysis.html', format='svg', bbox_inches='tight')
+        
+        plt.show()
+        
+        # Calculate statistics
+        mean_residual = residuals.mean()
+        std_residual = residuals.std()
+        mean_abs_error_pct = abs(error_percentage).mean()
+        within_10_pct = (abs(error_percentage) <= 10).sum() / len(error_percentage) * 100
+        within_20_pct = (abs(error_percentage) <= 20).sum() / len(error_percentage) * 100
+        
+        display(Markdown(f"""
+::: {{.callout-tip}}
+## 📊 Prediction Quality Metrics
 
-### Recommended Enhancements
+- **Mean Residual:** ${mean_residual:,.2f}
+- **Std Dev of Residuals:** ${std_residual:,.2f}
+- **Mean Absolute % Error:** {mean_abs_error_pct:.2f}%
+- **Predictions within ±10%:** {within_10_pct:.1f}%
+- **Predictions within ±20%:** {within_20_pct:.1f}%
 
-**1. Feature Engineering**:
-- Industry-specific salary adjustments
-- Cost-of-living adjustments by location
-- Company size and type classifications
-- Skills and technology requirements
+Figures saved to:
 
-**2. Model Improvements**:
-- Ensemble methods combining multiple algorithms
-- Deep learning approaches for complex patterns
-- Time-series analysis for market trends
-- Quantile regression for salary range predictions
+- `figures/prediction_analysis.png`
+- `figures/prediction_analysis.svg`
+- `figures/prediction_analysis.html`
 
-**3. Data Quality**:
-- Enhanced salary data collection
-- Real-time market adjustments
-- Industry benchmarking integration
-- Geographic granularity improvements
+:::
+"""))
+        
+    except Exception as e:
+        display(Markdown(f"""
+::: {{.callout-warning}}
+## ❌ Error Creating Prediction Visualizations
+Error: {str(e)}
+:::
+"""))
+else:
+    display(Markdown("""
+::: {.callout-warning}
+## ⚠️ No Best Model Available
+Prediction analysis requires a successfully trained model.
+:::
+"""))
+```
 
-**4. Advanced Techniques**:
-- Log transformation for salary normalization
-- Regularization methods (Ridge/Lasso)
-- Cross-validation for hyperparameter tuning
-- Bayesian approaches for uncertainty quantification
+## Summary and Insights
 
-# Conclusion
+```{python}
+#| label: summary-insights
+#| echo: false
+#| output: true
 
-## Key Achievements
+# Create comprehensive summary
+if best_model_results and successful_models:
+    # Build feature insights section
+    feature_insights = ""
+    if importance_df is not None:
+        top_3_features = importance_df.head(3)
+        features_list = '\n'.join([f"{i+1}. **{row['Feature']}:** {row['Importance']:.4f}" 
+                                   for i, (_, row) in enumerate(top_3_features.iterrows())])
+        feature_insights = f"""
+### Feature Insights
 
-This comprehensive analysis successfully developed a PySpark-based machine learning pipeline for salary prediction, achieving several important milestones:
+**Most Important Features:**
 
-1. **Scalable Processing**: Handled 684MB dataset with 11.9M records using distributed computing
-2. **Robust Target Variable**: Created SALARY_AVG with 100% coverage through hierarchical imputation
-3. **Model Comparison**: Evaluated three algorithms with comprehensive diagnostic analysis
-4. **Business Insights**: Quantified experience premium and identified key salary drivers
-5. **Production Readiness**: Delivered interpretable models with clear performance metrics
+{features_list}
 
-## Primary Findings
+**Total Features Analyzed:** {len(importance_df)}
+"""
+    
+    # Determine model strength
+    model_strength = "strong" if best_r2 > 0.7 else "moderate" if best_r2 > 0.5 else "weak"
+    
+    display(Markdown(f"""
+::: {{.callout-important}}
+## 🎯 Key Findings and Insights
 
-**Best Model Performance**:
-- **Random Forest**: R² = 0.1789, RMSE = $35,144, MAE = $26,316
-- **Prediction Accuracy**: ±$26,316 average error (22.8% of mean salary)
-- **Experience Dominance**: 58.7% of model importance attributed to experience requirements
+### Model Performance
 
-**Business Impact**:
-- **Experience Premium**: $3,608 per year of minimum experience
-- **Education Value**: Significant positive correlation with educational requirements  
-- **Geographic Effects**: Location substantially impacts earning potential
-- **Industry Patterns**: Staffing companies typically offer $3,816 less compensation
+- **Best Performing Model:** {best_model_name}
+- **R² Score:** {best_r2:.4f} (explains {best_r2*100:.1f}% of salary variance)
+- **RMSE:** ${best_rmse:,.2f}
+- **Number of Models Evaluated:** {len(successful_models)}
+{feature_insights}
+### Data Quality
 
-## Strategic Recommendations
+- **Training Records:** {train_count:,}
+- **Testing Records:** {test_count:,}
+- **Total Records Processed:** {total_records:,}
 
-### Immediate Implementation
-1. **Deploy Random Forest Model**: Best performance for production use
-2. **Experience-Based Pricing**: Use $3,608/year coefficient for role budgeting
-3. **Location Adjustments**: Incorporate geographic salary variations
-4. **Quality Monitoring**: Track prediction accuracy and bias patterns
+### Recommendations
 
-### Medium-Term Enhancements
-1. **Feature Expansion**: Include skills, company size, and market trends
-2. **Real-Time Updates**: Implement continuous learning for market changes
-3. **Ensemble Methods**: Combine multiple algorithms for improved accuracy
-4. **User Interface**: Develop stakeholder-friendly prediction tools
+- The {best_model_name} model shows **{model_strength}** predictive power for salary estimation
+- Experience-related features appear to be key drivers of salary predictions
+- Geographic location (STATE_NAME) and employment type significantly influence salary ranges
+- Consider collecting additional features like company size, industry sector, and specific skills for improved predictions
+:::
+"""))
+else:
+    print("⚠️ Insufficient data for comprehensive summary")
+```
 
-### Long-Term Vision
-1. **Advanced Analytics**: Deep learning and natural language processing
-2. **Market Intelligence**: Integration with economic indicators and trends
-3. **Personalization**: Customized predictions based on individual profiles
-4. **Industry Solutions**: Sector-specific models for specialized markets
-
-## Final Assessment
-
-While the current models achieve meaningful predictive capability, the relatively low R² values (0.15-0.18) indicate substantial room for improvement. The systematic underprediction bias and assumption violations suggest that salary determination involves complex factors not fully captured by the current feature set.
-
-However, the analysis provides valuable insights into salary drivers and establishes a solid foundation for iterative improvement. The dominant importance of experience, quantified education effects, and geographic variations offer actionable intelligence for all stakeholders in the employment ecosystem.
-
-**Success Metrics**:
-- ✅ Scalable PySpark implementation completed
-- ✅ Comprehensive model evaluation with diagnostic analysis  
-- ✅ Business-actionable insights identified and quantified
-- ✅ Production-ready pipeline with performance monitoring
-- ✅ Clear roadmap for continuous improvement established
-
-This analysis demonstrates the power of machine learning in understanding labor market dynamics while highlighting the complexity of accurate salary prediction in today's diverse employment landscape.
