@@ -107,12 +107,12 @@ try:
     
     display(Markdown(f"""
 ::: {{.callout-note}}
-## ✅ PySpark session initialized successfully!
+## PySpark session initialized successfully!
   - Spark version: {spark.version}
 :::"""))
     
 except Exception as e:
-    print(f"❌ Error initializing Spark: {str(e)}")
+    print(f"Error initializing Spark: {str(e)}")
 ```
 
 ```{python}
@@ -139,7 +139,7 @@ try:
     
     display(Markdown(f"""
 ::: {{.callout-note}}
-## ✅ Dataset Loaded Successfully!
+## Dataset Loaded Successfully!
 - **Shape:** {row_count:,} rows × {col_count} columns
 - **File size:** {os.path.getsize(data_path) / (1024**2):.1f} MB
 :::
@@ -159,14 +159,14 @@ try:
     
     display(Markdown(f"""
 ::: {{.callout-note collapse="true"}}
-## 📋 Column Overview ({col_count} columns)
+## Column Overview ({col_count} columns)
 
 {column_list}
 :::
 """))
     
 except Exception as e:
-    print(f"❌ Error loading dataset: {str(e)}")
+    print(f"Error loading dataset: {str(e)}")
     print("Please ensure the data file exists and is accessible")
     raise
 ```
@@ -273,7 +273,7 @@ df_salary = df.withColumn("SALARY_AVG",
 
 display(Markdown("""
 ::: {.callout-tip}
-## ✅ Target Variable Created
+## Target Variable Created
 Created **SALARY_AVG** column using average of salary range: `(SALARY_FROM + SALARY_TO) / 2`
 :::
 """))
@@ -300,7 +300,7 @@ city_count = median_by_city.count()
 
 display(Markdown(f"""
 ::: {{.callout-note}}
-## 📊 Hierarchical Median Calculation
+## Hierarchical Median Calculation
 
   - **City + Industry combinations:** {city_naics_count:,}
   - **City-only combinations:** {city_count:,}
@@ -327,7 +327,7 @@ imputed_null_count = df_imputed.filter(col("SALARY_AVG_IMPUTED").isNull() | (col
 
 display(Markdown(f"""
 ::: {{.callout-tip}}
-## ✅ Imputation Results
+## Imputation Results
 
 - **Before:** {original_null_count:,} missing salaries
 - **After:** {imputed_null_count:,} missing salaries  
@@ -345,7 +345,7 @@ final_col_count = len(df.columns)
 
 display(Markdown(f"""
 ::: {{.callout-note}}
-## 📦 Final Dataset
+## Final Dataset
 
 **{final_row_count:,}** rows × **{final_col_count}** columns
 :::
@@ -356,7 +356,7 @@ display(Markdown(f"""
 ## Feature Selection and Engineering
 
 ::: {.callout-note}
-## 📊 Selected Features
+## Selected Features
 
 ### Continuous Variables (3)
 
@@ -406,7 +406,7 @@ df_featured = df_featured.withColumn("SALARY_POSTING_AVAILABLE",
 
 display(Markdown("""
 ::: {.callout-tip}
-## 🔧 Engineered Features
+## Engineered Features
 
 - **EXPERIENCE_MID_YEARS:** Average of min/max experience
 - **POSTING_DURATION:** Job posting duration (default 30 days)
@@ -421,7 +421,7 @@ valid_salary_records = df_processed.count()
 # Display modeling dataset statistics
 display(Markdown(f"""
 ::: {{.callout-tip}}
-## 📈 Modeling Dataset
+## Modeling Dataset
 
 - **Records with valid salaries:** {valid_salary_records:,}
 - **Percentage of original data:** {(valid_salary_records / df.count()) * 100:.1f}%
@@ -459,7 +459,7 @@ numerical_list = '\n'.join([f"{i+1}. {feat}" for i, feat in enumerate(numerical_
 
 display(Markdown(f"""
 ::: {{.callout-note}}
-## 📋 Feature Categories
+## Feature Categories
 
 ### Categorical Features ({len(categorical_features)})
 
@@ -490,7 +490,7 @@ preprocessing_pipeline = Pipeline(stages=pipeline_stages)
 
 display(Markdown(f"""
 ::: {{.callout-tip}}
-## 🔧 Pipeline Stages
+## Pipeline Stages
 
 **Total stages:** {len(pipeline_stages)}
 
@@ -506,7 +506,7 @@ df_preprocessed = preprocessing_model.transform(df_processed)
 
 display(Markdown(f"""
 ::: {{.callout-tip}}
-## ✅ Preprocessing Completed
+## Preprocessing Completed
 
 **Final feature vector dimensions:** {len(all_feature_cols)} input features
 :::
@@ -530,7 +530,7 @@ try:
     
     display(Markdown(f"""
 ::: {{.callout-note}}
-## 📈 Train/Test Split
+## Train/Test Split
 
 - **Training data:** {train_count:,} records ({train_percentage:.1f}%)
 - **Testing data:** {test_count:,} records ({test_percentage:.1f}%)
@@ -538,7 +538,7 @@ try:
 :::
 """))
 except Exception as e:
-    print(f"⚠️ Error calculating data split statistics: {str(e)}")
+    print(f"Error calculating data split statistics: {str(e)}")
     print("Proceeding with data split (counts not displayed)")
 ```
 
@@ -592,7 +592,7 @@ Building baseline linear model...
     
     display(Markdown(f"""
 ::: {{.callout-note}}
-## ✅ Linear Regression Results
+## Linear Regression Results
 
 - **RMSE:** ${lr_rmse:,.2f}
 - **R²:** {lr_r2:.4f}
@@ -603,7 +603,7 @@ Building baseline linear model...
 except Exception as e:
     display(Markdown(f"""
 ::: {{.callout-warning}}
-## ❌ Linear Regression Training Failed
+## Linear Regression Training Failed
 Error: {str(e)}
 :::
 """))
@@ -613,7 +613,7 @@ Error: {str(e)}
 try:
     display(Markdown("""
 ::: {.callout-tip}
-## 🟡 Training Polynomial Regression
+## Training Polynomial Regression
 Adding polynomial features for non-linear relationships...
 :::
 """))
@@ -655,7 +655,7 @@ Adding polynomial features for non-linear relationships...
 
     display(Markdown(f"""
 ::: {{.callout-note}}
-## ✅ Polynomial Regression Results
+## Polynomial Regression Results
 
 - **RMSE:** ${poly_lr_rmse:,.2f}
 - **R²:** {poly_lr_r2:.4f}
@@ -666,7 +666,7 @@ Adding polynomial features for non-linear relationships...
 except Exception as e:
     display(Markdown(f"""
 ::: {{.callout-warning}}
-## ❌ Polynomial Regression Training Failed
+## Polynomial Regression Training Failed
 Error: {str(e)}
 :::
 """))
@@ -676,7 +676,7 @@ Error: {str(e)}
 try:
     display(Markdown("""
 ::: {.callout-tip}
-## 🟢 Training Random Forest
+## Training Random Forest
 Building ensemble model with 100 trees...
 :::
 """))
@@ -699,7 +699,7 @@ Building ensemble model with 100 trees...
 
     display(Markdown(f"""
 ::: {{.callout-note}}
-## ✅ Random Forest Results
+## Random Forest Results
 
 - **RMSE:** ${rf_rmse:,.2f}
 - **R²:** {rf_r2:.4f}
@@ -710,7 +710,7 @@ Building ensemble model with 100 trees...
 except Exception as e:
     display(Markdown(f"""
 ::: {{.callout-warning}}
-## ❌ Random Forest Training Failed
+## Random Forest Training Failed
 Error: {str(e)}
 :::
 """))
@@ -739,7 +739,7 @@ if successful_models:
 
     display(Markdown(f"""
 ::: {{.callout-important}}
-## 📊 Model Performance Comparison
+## Model Performance Comparison
 
 | Model | RMSE | R² | MAE |
 |-------|------|-----|-----|
@@ -758,7 +758,7 @@ if successful_models:
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ❌ No Models Trained Successfully
+## No Models Trained Successfully
 All model training attempts failed. Please check the data and configuration.
 :::
 """))
@@ -826,7 +826,7 @@ if successful_models:
             
             display(Markdown(f"""
 ::: {{.callout-tip}}
-## ✅ Predictions DataFrame Created
+## Predictions DataFrame Created
 
 **Total Records:** {len(all_predictions_df):,} predictions across {len(all_predictions_list)} models
 
@@ -858,7 +858,7 @@ The complete predictions DataFrame is stored in `all_predictions_df` variable.
         else:
             display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ No Predictions to Display
+## No Predictions to Display
 No successful model predictions available.
 :::
 """))
@@ -866,14 +866,14 @@ No successful model predictions available.
     except Exception as e:
         display(Markdown(f"""
 ::: {{.callout-warning}}
-## ❌ Error Creating Predictions DataFrame
+## Error Creating Predictions DataFrame
 Error: {str(e)}
 :::
 """))
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ No Models Available
+## No Models Available
 Cannot create predictions DataFrame without trained models.
 :::
 """))
@@ -888,7 +888,7 @@ Cannot create predictions DataFrame without trained models.
 
 display(Markdown("""
 ::: {.callout-note}
-## 📈 Advanced Model Selection Metrics
+## Advanced Model Selection Metrics
 Calculating Log-Likelihood and Bayesian Information Criterion (BIC)
 :::
 """))
@@ -974,7 +974,7 @@ if successful_models:
         
         display(Markdown(f"""
 ::: {{.callout-tip}}
-## 📊 Model Selection Criteria Results
+## Model Selection Criteria Results
 
 | Model | Log-Likelihood | Parameters (k) | BIC | AIC |
 |-------|----------------|----------------|-----|-----|
@@ -1003,14 +1003,14 @@ provides the best trade-off between fit and complexity.
     else:
         display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ Could Not Calculate Model Selection Metrics
+## Could Not Calculate Model Selection Metrics
 Unable to compute Log-Likelihood and BIC for the models.
 :::
 """))
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ No Models Available
+## No Models Available
 Model selection criteria require successfully trained models.
 :::
 """))
@@ -1025,7 +1025,7 @@ Model selection criteria require successfully trained models.
 
 display(Markdown("""
 ::: {.callout-note}
-## 🔍 Random Forest Feature Importance Analysis
+## Random Forest Feature Importance Analysis
 Analyzing feature contributions to model predictions
 :::
 """))
@@ -1146,7 +1146,7 @@ if best_model_results and 'Random Forest' in model_results and model_results['Ra
 
 {top_10_features}
 
-### 🏆 Most Important Feature
+### Most Important Feature
 
 **{top_feature['Feature']}:** {top_feature['Importance']:.4f} ({top_feature['Importance']*100:.1f}%)
 
@@ -1160,7 +1160,7 @@ if best_model_results and 'Random Forest' in model_results and model_results['Ra
     except Exception as e:
         display(Markdown(f"""
 ::: {{.callout-warning}}
-## ❌ Feature Importance Analysis Failed
+## Feature Importance Analysis Failed
 Error: {str(e)}
 :::
 """))
@@ -1169,7 +1169,7 @@ Error: {str(e)}
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ❌ Random Forest Model Not Available
+## Random Forest Model Not Available
 Feature importance analysis requires successful Random Forest training
 :::
 """))
@@ -1253,7 +1253,7 @@ if successful_models:
     
     display(Markdown(f"""
 ::: {{.callout-tip}}
-## 📊 Model Performance Visualization Complete
+## Model Performance Visualization Complete
 
 Compared **{len(successful_models)} models** across three key metrics (RMSE, R², MAE)
 
@@ -1266,7 +1266,7 @@ Compared **{len(successful_models)} models** across three key metrics (RMSE, R²
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ No Models Available for Visualization
+## No Models Available for Visualization
 No successful models to visualize. Please check model training results.
 :::
 """))
@@ -1374,7 +1374,7 @@ if importance_df is not None:
     
     display(Markdown(f"""
 ::: {{.callout-tip}}
-## 📊 Feature Importance Insights
+## Feature Importance Insights
 
 - **Top features** drive prediction accuracy
 - **{features_80} features** explain 80% of importance
@@ -1389,7 +1389,7 @@ if importance_df is not None:
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ Feature Importance Data Not Available
+## Feature Importance Data Not Available
 Feature importance visualization requires Random Forest model with successful training.
 :::
 """))
@@ -1480,7 +1480,7 @@ if best_model_results is not None:
         
         display(Markdown(f"""
 ::: {{.callout-tip}}
-## 📊 Prediction Quality Metrics
+## Prediction Quality Metrics
 
 - **Mean Residual:** ${mean_residual:,.2f}
 - **Std Dev of Residuals:** ${std_residual:,.2f}
@@ -1500,14 +1500,14 @@ Figures saved to:
     except Exception as e:
         display(Markdown(f"""
 ::: {{.callout-warning}}
-## ❌ Error Creating Prediction Visualizations
+## Error Creating Prediction Visualizations
 Error: {str(e)}
 :::
 """))
 else:
     display(Markdown("""
 ::: {.callout-warning}
-## ⚠️ No Best Model Available
+## No Best Model Available
 Prediction analysis requires a successfully trained model.
 :::
 """))
@@ -1543,7 +1543,7 @@ if best_model_results and successful_models:
     
     display(Markdown(f"""
 ::: {{.callout-important}}
-## 🎯 Key Findings and Insights
+## Key Findings and Insights
 
 ### Model Performance
 
@@ -1567,6 +1567,6 @@ if best_model_results and successful_models:
 :::
 """))
 else:
-    print("⚠️ Insufficient data for comprehensive summary")
+    print("Insufficient data for comprehensive summary")
 ```
 
