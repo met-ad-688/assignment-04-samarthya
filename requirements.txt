@@ -195,3 +195,4 @@ xarray==2025.1.2
 xyzservices==2025.1.0
 zipp==3.21.0
 zstandard==0.23.0
+gdown==5.2.0
