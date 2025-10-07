@@ -58,14 +58,6 @@ assignment-04-samarthya/
 
 **Note**: Ensure Java and PySpark are properly configured before running the analysis.
 
-## Dependencies
-
-- **PySpark 3.0+**: Distributed data processing and machine learning
-- **Python 3.8+**: Base environment  
-- **Java 8+**: Required for PySpark
-- **Matplotlib/Seaborn**: Data visualization
-- **Pandas**: Data manipulation for result analysis
-
 ---
 
 **Course**: MET AD 688 | **Institution**: Boston University | **Semester**: Fall 2025

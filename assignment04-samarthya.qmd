@@ -158,10 +158,12 @@ try:
         column_list = f"{first_20}\n\n*... {len(all_columns) - 30} columns omitted ...*\n\n{last_10}"
     
     display(Markdown(f"""
-::: {{.callout-note collapse="true"}}
+::: {{.callout-note collapse="true" }}
+::: {{.content-visible when-format="html" }}
 ## Column Overview ({col_count} columns)
 
 {column_list}
+:::
 :::
 """))
     
@@ -271,8 +273,8 @@ df_salary = df.withColumn("SALARY_AVG",
     .otherwise(col("SALARY").cast("double"))
 )
 
-display(Markdown("""
-::: {.callout-tip}
+display(Markdown(f"""
+::: {{.callout-tip}}
 ## Target Variable Created
 Created **SALARY_AVG** column using average of salary range: `(SALARY_FROM + SALARY_TO) / 2`
 :::
@@ -404,8 +406,8 @@ df_featured = df_featured.withColumn("POSTING_DURATION",
 df_featured = df_featured.withColumn("SALARY_POSTING_AVAILABLE", 
                                     when(col("SALARY_AVG").isNotNull(), 1).otherwise(0))
 
-display(Markdown("""
-::: {.callout-tip}
+display(Markdown(f"""
+::: {{.callout-tip}}
 ## Engineered Features
 
 - **EXPERIENCE_MID_YEARS:** Average of min/max experience
@@ -551,8 +553,8 @@ except Exception as e:
 #| echo: true
 #| output: true
 
-display(Markdown("""
-::: {.callout-note}
+display(Markdown(f"""
+::: {{.callout-note}}
 ## Model Training and Evaluation
 Initializing three regression models for salary prediction
 :::
@@ -568,8 +570,8 @@ model_results = {}
 
 # 1. Linear Regression
 try:
-    display(Markdown("""
-::: {.callout-tip}
+    display(Markdown(f"""
+::: {{.callout-tip}}
 ## Training Linear Regression
 Building baseline linear model...
 :::
@@ -611,8 +613,8 @@ Error: {str(e)}
 
 # 2. Polynomial Regression (Linear Regression with polynomial features)
 try:
-    display(Markdown("""
-::: {.callout-tip}
+    display(Markdown(f"""
+::: {{.callout-tip}}
 ## Training Polynomial Regression
 Adding polynomial features for non-linear relationships...
 :::
@@ -674,8 +676,8 @@ Error: {str(e)}
 
 # 3. Random Forest Regression
 try:
-    display(Markdown("""
-::: {.callout-tip}
+    display(Markdown(f"""
+::: {{.callout-tip}}
 ## Training Random Forest
 Building ensemble model with 100 trees...
 :::
@@ -756,8 +758,8 @@ if successful_models:
     # Store best model info for later use
     best_model_results = model_results[best_model_name]
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## No Models Trained Successfully
 All model training attempts failed. Please check the data and configuration.
 :::
@@ -772,8 +774,8 @@ All model training attempts failed. Please check the data and configuration.
 #| echo: true
 #| output: true
 
-display(Markdown("""
-::: {.callout-note}
+display(Markdown(f"""
+::: {{.callout-note}}
 ## Creating Predictions DataFrame
 Storing predictions and actual values for each model
 :::
@@ -856,8 +858,8 @@ The complete predictions DataFrame is stored in `all_predictions_df` variable.
             globals()['all_predictions_df'] = all_predictions_df
             
         else:
-            display(Markdown("""
-::: {.callout-warning}
+            display(Markdown(f"""
+::: {{.callout-warning}}
 ## No Predictions to Display
 No successful model predictions available.
 :::
@@ -871,8 +873,8 @@ Error: {str(e)}
 :::
 """))
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## No Models Available
 Cannot create predictions DataFrame without trained models.
 :::
@@ -886,8 +888,8 @@ Cannot create predictions DataFrame without trained models.
 #| echo: true
 #| output: true
 
-display(Markdown("""
-::: {.callout-note}
+display(Markdown(f"""
+::: {{.callout-note}}
 ## Advanced Model Selection Metrics
 Calculating Log-Likelihood and Bayesian Information Criterion (BIC)
 :::
@@ -1001,15 +1003,15 @@ provides the best trade-off between fit and complexity.
 :::
 """))
     else:
-        display(Markdown("""
-::: {.callout-warning}
+        display(Markdown(f"""
+::: {{.callout-warning}}
 ## Could Not Calculate Model Selection Metrics
 Unable to compute Log-Likelihood and BIC for the models.
 :::
 """))
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## No Models Available
 Model selection criteria require successfully trained models.
 :::
@@ -1023,8 +1025,8 @@ Model selection criteria require successfully trained models.
 #| echo: true
 #| output: true
 
-display(Markdown("""
-::: {.callout-note}
+display(Markdown(f"""
+::: {{.callout-note}}
 ## Random Forest Feature Importance Analysis
 Analyzing feature contributions to model predictions
 :::
@@ -1167,8 +1169,8 @@ Error: {str(e)}
         importance_df = None
 
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## Random Forest Model Not Available
 Feature importance analysis requires successful Random Forest training
 :::
@@ -1264,8 +1266,8 @@ Compared **{len(successful_models)} models** across three key metrics (RMSE, R²
 :::
 """))
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## No Models Available for Visualization
 No successful models to visualize. Please check model training results.
 :::
@@ -1387,8 +1389,8 @@ if importance_df is not None:
 :::
 """))
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## Feature Importance Data Not Available
 Feature importance visualization requires Random Forest model with successful training.
 :::
@@ -1505,8 +1507,8 @@ Error: {str(e)}
 :::
 """))
 else:
-    display(Markdown("""
-::: {.callout-warning}
+    display(Markdown(f"""
+::: {{.callout-warning}}
 ## No Best Model Available
 Prediction analysis requires a successfully trained model.
 :::
