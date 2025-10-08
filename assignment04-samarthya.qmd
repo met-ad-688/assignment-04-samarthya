@@ -27,36 +27,25 @@ This analysis explores building machine learning models to predict job salaries 
 
 - **Data Exploration**: Understanding the structure and quality of job posting data
 - **Feature Engineering**: Creating meaningful predictors from job characteristics  
-- **Model Development**: Implementing and comparing three regression approaches
+- **Model Development**: Implementing and comparing four regression approaches
 - **Performance Evaluation**: Assessing model effectiveness with multiple metrics
 - **Insights Discovery**: Identifying key factors that drive salary predictions
 
 
 Let's begin our exploration.
 
-## Problem Statement
-
-In today's competitive job market, accurate salary prediction is crucial for:
-
-- **Job seekers**: Setting realistic salary expectations
-- **Employers**: Competitive compensation strategies  
-- **HR professionals**: Market benchmarking and budget planning
-- **Recruitment platforms**: Enhancing job matching algorithms
-
 ## Research Objectives
 
 This analysis aims to:
 
 1. **Develop predictive models** using PySpark for salary estimation from job posting features
-2. **Compare model performance** across Linear Regression, Polynomial Regression, and Random Forest
+2. **Compare model performance** across Linear Regression, Polynomial Regression, Generalized Linear Models (GLM), and Random Forest
 3. **Identify key factors** driving salary variations in the job market
 4. **Provide actionable insights** for stakeholders in the employment ecosystem
 
 ## Dataset Overview
 
 - **Source**: Lightcast job postings dataset
-- **Original Size**: 11.9M rows × 131 columns (684MB)
-- **Processed Records**: 49,352 valid salary records after filtering
 - **Target Variable**: SALARY_AVG (engineered from salary ranges with median imputation)
 - **Features**: 10 selected variables including experience, education, location, and job characteristics
 
@@ -81,7 +70,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, coalesce, expr, trim, mean, isnan, isnull
 from pyspark.sql.types import *
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
-from pyspark.ml.regression import LinearRegression, RandomForestRegressor
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GeneralizedLinearRegression
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml import Pipeline
 import matplotlib.pyplot as plt
@@ -185,9 +174,10 @@ try:
         last_10 = '\n'.join([f"{i+1}. {col_name}" for i, col_name in enumerate(all_columns[-10:], start=len(all_columns)-10)])
         column_list = f"{first_20}\n\n*... {len(all_columns) - 30} columns omitted ...*\n\n{last_10}"
     
-    display(Markdown(f"""
-::: {{.callout-note collapse="true" }}
-::: {{.content-visible when-format="html" }}
+    # HTML only: Collapsible callout with full column list
+    display(Markdown(f"""    
+::: {{.content-visible when-format="html"}}
+::: {{.callout-note collapse="true"}}
 ## Column Overview ({col_count} columns)
 
 {column_list}
@@ -271,16 +261,16 @@ if missing_stats:
 
 ### Summary:
 
-  - **Columns analyzed:** {len(missing_df)}
-  - **Highest missing:** {missing_df['Missing_Percentage'].max():.1f}% ({highest_missing_col['Column']})
-  - **Columns with <50% missing:** {(missing_df['Missing_Percentage'] < 50).sum()}
+- **Columns analyzed:** {len(missing_df)}
+- **Highest missing:** {missing_df['Missing_Percentage'].max():.1f}% ({highest_missing_col['Column']})
+- **Columns with <50% missing:** {(missing_df['Missing_Percentage'] < 50).sum()}
 :::
 :::
 """))
     
-    # DOCX/PDF: Simple markdown
-    table_rows_simple = '\n'.join([
-        f"{row['Column']}: {row['Missing_Count']:,} ({row['Missing_Percentage']:.1f}%) - {row['Data_Type']}"
+    # DOCX/PDF: Simple markdown with proper line breaks
+    table_rows_simple = '\n\n'.join([
+        f"- {row['Column']}: {row['Missing_Count']:,} ({row['Missing_Percentage']:.1f}%) - {row['Data_Type']}"
         for _, row in missing_df.iterrows()
     ])
     
@@ -291,6 +281,8 @@ if missing_stats:
 {table_rows_simple}
 
 ---
+
+**Summary:**
 
 - Columns analyzed: {len(missing_df)}
 - Highest missing: {missing_df['Missing_Percentage'].max():.1f}% ({highest_missing_col['Column']})
@@ -647,7 +639,7 @@ except Exception as e:
 display(Markdown(f"""
 ::: {{.callout-note}}
 ## Model Training and Evaluation
-Initializing three regression models for salary prediction
+Initializing four regression models for salary prediction
 :::
 """))
 
@@ -814,6 +806,65 @@ Error: {str(e)}
 """))
     model_results['Random Forest'] = None
 
+# 4. Generalized Linear Regression (GLM)
+try:
+    display(Markdown(f"""
+::: {{.callout-tip}}
+## Training Generalized Linear Regression
+Building GLM with Gaussian family and identity link...
+:::
+"""))
+    
+    # GLM with Gaussian family (appropriate for continuous salary data)
+    glm = GeneralizedLinearRegression(
+        featuresCol="features", 
+        labelCol="SALARY_AVG",
+        family="gaussian",  # For continuous response variable
+        link="identity",    # Identity link: E(Y) = X*β
+        maxIter=100,
+        regParam=0.1
+    )
+    
+    glm_model = glm.fit(train_data)
+    glm_predictions = glm_model.transform(test_data)
+    
+    # Cache predictions
+    glm_predictions.cache()
+    
+    glm_rmse = evaluator_rmse.evaluate(glm_predictions)
+    glm_r2 = evaluator_r2.evaluate(glm_predictions)
+    glm_mae = evaluator_mae.evaluate(glm_predictions)
+    
+    model_results['Generalized Linear (GLM)'] = {
+        'rmse': glm_rmse, 'r2': glm_r2, 'mae': glm_mae,
+        'model': glm_model, 'predictions': glm_predictions
+    }
+    
+    display(Markdown(f"""
+::: {{.callout-note}}
+## Generalized Linear Regression Results
+
+- **RMSE:** ${glm_rmse:,.2f}
+- **R²:** {glm_r2:.4f}
+- **MAE:** ${glm_mae:,.2f}
+- **Family:** Gaussian
+- **Link Function:** Identity
+
+### Model Coefficients Summary
+- **Intercept:** ${glm_model.intercept:,.2f}
+- **Number of Coefficients:** {len(glm_model.coefficients)}
+:::
+"""))
+    
+except Exception as e:
+    display(Markdown(f"""
+::: {{.callout-warning}}
+## Generalized Linear Regression Training Failed
+Error: {str(e)}
+:::
+"""))
+    model_results['Generalized Linear (GLM)'] = None
+
 # Model comparison
 successful_models = []
 comparison_table_rows = []
@@ -953,7 +1004,19 @@ The complete predictions DataFrame is stored in `all_predictions_df` variable.
 :::
 """))
             
-            # DOCX/PDF: Simple markdown
+            # DOCX/PDF: Simple markdown with proper line breaks
+            model_summaries = []
+            for model_name in all_predictions_df['Model'].unique():
+                model_df = all_predictions_df[all_predictions_df['Model'] == model_name]
+                summary = f"""**{model_name}:**
+
+- Count: {len(model_df):,}
+- Avg Actual Salary: ${model_df['Actual_Salary'].mean():,.2f}
+- Avg Predicted Salary: ${model_df['Predicted_Salary'].mean():,.2f}
+- Avg Absolute Error: ${model_df['Absolute_Error'].mean():,.2f}
+"""
+                model_summaries.append(summary)
+            
             display(Markdown(f"""
 ::: {{.content-hidden when-format="html"}}
 **PREDICTIONS DATAFRAME CREATED**
@@ -962,12 +1025,7 @@ Total Records: {len(all_predictions_df):,} predictions across {len(all_predictio
 
 **Summary Statistics by Model:**
 
-{chr(10).join([f"**{model_name}:**" + chr(10) + 
-               f"- Count: {len(all_predictions_df[all_predictions_df['Model'] == model_name]):,}" + chr(10) +
-               f"- Avg Actual Salary: ${all_predictions_df[all_predictions_df['Model'] == model_name]['Actual_Salary'].mean():,.2f}" + chr(10) +
-               f"- Avg Predicted Salary: ${all_predictions_df[all_predictions_df['Model'] == model_name]['Predicted_Salary'].mean():,.2f}" + chr(10) +
-               f"- Avg Absolute Error: ${all_predictions_df[all_predictions_df['Model'] == model_name]['Absolute_Error'].mean():,.2f}"
-               for model_name in all_predictions_df['Model'].unique()])}
+{chr(10).join(model_summaries)}
 :::
 """))
             
