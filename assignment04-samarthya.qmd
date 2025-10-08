@@ -108,11 +108,23 @@ try:
         .config("spark.sql.csv.maxCharsPerColumn", "1000") \
         .getOrCreate()
     
+    # HTML: Styled callout
     display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-note}}
 ## PySpark session initialized successfully!
   - Spark version: {spark.version}
+:::
 :::"""))
+    
+    # DOCX/PDF: Simple markdown
+    display(Markdown(f"""
+::: {{.content-hidden when-format="html"}}
+**PYSPARK SESSION INITIALIZED SUCCESSFULLY**
+
+Spark version: {spark.version}
+:::
+"""))
     
 except Exception as e:
     print(f"Error initializing Spark: {str(e)}")
@@ -140,13 +152,26 @@ try:
     row_count = df.count()
     col_count = len(df.columns)
     
+    # HTML: Styled callout
     display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-note}}
 ## Dataset Loaded Successfully!
 - **Shape:** {row_count:,} rows × {col_count} columns
 - **File size:** {os.path.getsize(data_path) / (1024**2):.1f} MB
 :::
+:::
     """))
+    
+    # DOCX/PDF: Simple markdown
+    display(Markdown(f"""
+::: {{.content-hidden when-format="html"}}
+**DATASET LOADED SUCCESSFULLY**
+
+- Shape: {row_count:,} rows × {col_count} columns
+- File size: {os.path.getsize(data_path) / (1024**2):.1f} MB
+:::
+"""))
     
     # Show column overview in markdown table format
     # Create markdown table rows (showing first 20 and last 10 for brevity in DOCX)
@@ -234,7 +259,9 @@ if missing_stats:
     
     highest_missing_col = missing_df.loc[missing_df['Missing_Percentage'].idxmax()]
     
+    # HTML: Styled callout with table
     display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-note}}
 ## Missing Values Analysis
 
@@ -247,6 +274,27 @@ if missing_stats:
   - **Columns analyzed:** {len(missing_df)}
   - **Highest missing:** {missing_df['Missing_Percentage'].max():.1f}% ({highest_missing_col['Column']})
   - **Columns with <50% missing:** {(missing_df['Missing_Percentage'] < 50).sum()}
+:::
+:::
+"""))
+    
+    # DOCX/PDF: Simple markdown
+    table_rows_simple = '\n'.join([
+        f"{row['Column']}: {row['Missing_Count']:,} ({row['Missing_Percentage']:.1f}%) - {row['Data_Type']}"
+        for _, row in missing_df.iterrows()
+    ])
+    
+    display(Markdown(f"""
+::: {{.content-hidden when-format="html"}}
+**MISSING VALUES ANALYSIS**
+
+{table_rows_simple}
+
+---
+
+- Columns analyzed: {len(missing_df)}
+- Highest missing: {missing_df['Missing_Percentage'].max():.1f}% ({highest_missing_col['Column']})
+- Columns with <50% missing: {(missing_df['Missing_Percentage'] < 50).sum()}
 :::
 """))
     
@@ -276,10 +324,22 @@ df_salary = df.withColumn("SALARY_AVG",
     .otherwise(col("SALARY").cast("double"))
 )
 
+# HTML: Styled callout
 display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-tip}}
 ## Target Variable Created
 Created **SALARY_AVG** column using average of salary range: `(SALARY_FROM + SALARY_TO) / 2`
+:::
+:::
+"""))
+
+# DOCX/PDF: Simple markdown
+display(Markdown("""
+::: {.content-hidden when-format="html"}
+**TARGET VARIABLE CREATED**
+
+Created SALARY_AVG column using average of salary range: (SALARY_FROM + SALARY_TO) / 2
 :::
 """))
 
@@ -303,7 +363,9 @@ overall_median = valid_salary_df.select(expr("percentile_approx(SALARY_AVG, 0.5)
 city_naics_count = median_by_city_naics.count()
 city_count = median_by_city.count()
 
+# HTML: Styled callout
 display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-note}}
 ## Hierarchical Median Calculation
 
@@ -311,6 +373,18 @@ display(Markdown(f"""
   - **City-only combinations:** {city_count:,}
   - **Overall median salary:** ${overall_median:,.2f}
 
+:::
+:::
+"""))
+
+# DOCX/PDF: Simple markdown
+display(Markdown(f"""
+::: {{.content-hidden when-format="html"}}
+**HIERARCHICAL MEDIAN CALCULATION**
+
+- City + Industry combinations: {city_naics_count:,}
+- City-only combinations: {city_count:,}
+- Overall median salary: ${overall_median:,.2f}
 :::
 """))
 
@@ -330,13 +404,27 @@ df_imputed = df_with_medians.withColumn("SALARY_AVG_IMPUTED",
 original_null_count = df_salary.filter(col("SALARY_AVG").isNull() | (col("SALARY_AVG") <= 0)).count()
 imputed_null_count = df_imputed.filter(col("SALARY_AVG_IMPUTED").isNull() | (col("SALARY_AVG_IMPUTED") <= 0)).count()
 
+# HTML: Styled callout
 display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-tip}}
 ## Imputation Results
 
 - **Before:** {original_null_count:,} missing salaries
 - **After:** {imputed_null_count:,} missing salaries  
 - **Imputed:** {original_null_count - imputed_null_count:,} records
+:::
+:::
+"""))
+
+# DOCX/PDF: Simple markdown
+display(Markdown(f"""
+::: {{.content-hidden when-format="html"}}
+**IMPUTATION RESULTS**
+
+- Before: {original_null_count:,} missing salaries
+- After: {imputed_null_count:,} missing salaries
+- Imputed: {original_null_count - imputed_null_count:,} records
 :::
 """))
 
@@ -834,8 +922,9 @@ if successful_models:
             # Display sample of predictions DataFrame (first 10 rows from each model)
             sample_predictions = all_predictions_df.groupby('Model').head(10)
             
+            # HTML: Use styled callouts with tables
             display(Markdown(f"""
-
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-tip}}
 ## Predictions DataFrame Created
 
@@ -861,6 +950,25 @@ if successful_models:
 
 The complete predictions DataFrame is stored in `all_predictions_df` variable.
 :::
+:::
+"""))
+            
+            # DOCX/PDF: Simple markdown
+            display(Markdown(f"""
+::: {{.content-hidden when-format="html"}}
+**PREDICTIONS DATAFRAME CREATED**
+
+Total Records: {len(all_predictions_df):,} predictions across {len(all_predictions_list)} models
+
+**Summary Statistics by Model:**
+
+{chr(10).join([f"**{model_name}:**" + chr(10) + 
+               f"- Count: {len(all_predictions_df[all_predictions_df['Model'] == model_name]):,}" + chr(10) +
+               f"- Avg Actual Salary: ${all_predictions_df[all_predictions_df['Model'] == model_name]['Actual_Salary'].mean():,.2f}" + chr(10) +
+               f"- Avg Predicted Salary: ${all_predictions_df[all_predictions_df['Model'] == model_name]['Predicted_Salary'].mean():,.2f}" + chr(10) +
+               f"- Avg Absolute Error: ${all_predictions_df[all_predictions_df['Model'] == model_name]['Absolute_Error'].mean():,.2f}"
+               for model_name in all_predictions_df['Model'].unique()])}
+:::
 """))
             
             # Make the DataFrame available for later use
@@ -868,26 +976,38 @@ The complete predictions DataFrame is stored in `all_predictions_df` variable.
             
         else:
             display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-warning}}
 ## No Predictions to Display
 No successful model predictions available.
 :::
+:::
 """))
+            print("\nWARNING: No Predictions to Display")
+            print("No successful model predictions available.\n")
             
     except Exception as e:
         display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-warning}}
 ## Error Creating Predictions DataFrame
 Error: {str(e)}
 :::
+:::
 """))
+        print(f"\nERROR: Creating Predictions DataFrame")
+        print(f"Error: {str(e)}\n")
 else:
     display(Markdown(f"""
+::: {{.content-visible when-format="html"}}
 ::: {{.callout-warning}}
 ## No Models Available
 Cannot create predictions DataFrame without trained models.
 :::
+:::
 """))
+    print("\nWARNING: No Models Available")
+    print("Cannot create predictions DataFrame without trained models.\n")
 ```
 
 ## Model Selection Criteria: Log-Likelihood and BIC
